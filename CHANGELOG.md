@@ -1,5 +1,40 @@
 # 更新日志
 
+## Windows 0.9.11 / Android 0.1.4（2026-11-17）
+
+大狗Office Windows **0.9.11** · AI 大狗 Android **0.1.4**
+
+本次提供 Windows x64 安装器与独立 Android APK。macOS/Linux 本轮未重建，请使用明确标为 0.9.3 的历史下载。
+
+### 主要更新
+
+- 全局 AI 大狗整合对话、Session 记忆、任务状态与成果记录，简化设置和审批入口。
+- 文件拖入作为引用并登记路径；补齐全局文件发现和搜索，修复 GPT-6 工具调用兼容。
+- Cua SDK 电脑操作工具通过独立辅助进程执行，沿用现有模型、权限和任务管理。
+- 手机支持二维码、图片或完整配对码连接；会话、任务确认、重试及成果与桌面保持一致。
+- Android 按 dsh-Go 的界面方式重做会话侧栏、聊天输入栏、任务弹层和分组设置，支持深浅主题、字号与内置 Office/PDF 预览。
+
+### 下载
+
+- [Windows x64 0.9.11](https://github.com/whdite/bdOffice/releases/download/v0.9.11/BigDogOffice-0.9.11-windows-x64.exe)
+- [Android 0.1.4 APK](https://github.com/whdite/bdOffice/releases/download/v0.9.11/AI-BigDog-0.1.4-android.apk)
+- [macOS/Linux 0.9.3 历史版本](https://github.com/whdite/bdOffice/releases/tag/v0.9.3)
+
+手机协作使用自部署连接服务，电脑负责执行任务；本轮已完成 MuMu 本地真实模型联调，真机软键盘、公网 NAT/蜂窝和后台推送仍待验收。Windows 未配置 Authenticode；APK 沿用现有 Android 签名。
+
+### 文件校验
+
+两个安装包、版本清单和 SHA256SUMS 均附 Minisign 签名，沿用现有公钥，未轮换。
+
+| 文件 | SHA-256 |
+| --- | --- |
+| Windows EXE | `315891100678f8726aec6165d8504c06bb176ad42779ddf25003ed979b16fe0e` |
+| Android APK | `e4700b5e2ef470d23506a1707e3b554c4b0eb8cab4bebd65b8ddc0e4b9d94667` |
+
+[下载与校验说明](https://github.com/whdite/bdOffice/blob/main/DOWNLOADS.md)。Minisign 不替代操作系统的发布者认证。
+
+
+
 ## 0.9.3 · 编辑引擎与 Home Agent 更新（2026-11-05）
 
 - 合入经审查的官方编辑引擎更新，覆盖 Word 解析、排版、导入导出，表格公式与旧格式转换，以及演示文稿、PDF、Markdown 和 HTML 的相关修复。

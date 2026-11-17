@@ -4,19 +4,22 @@
 
 让 AI 和你一起完成文档，而不只是回答问题。
 
-大狗Office 是一款基于 GenOffice 构建的桌面办公应用，将文档、表格、演示文稿、PDF、Markdown 和 HTML 编辑放进同一个工作空间，并提供大狗 Agent 与编辑器内嵌 AI 助手。
+大狗Office 是一款本地 AI 办公应用，将文档、表格、演示文稿、PDF、Markdown 和 HTML 编辑放进同一个工作空间，并提供统一的 AI 大狗对话与编辑器内嵌 AI 助手。
 
 [下载安装包](https://github.com/whdite/bdOffice/releases/latest) · [国内下载入口](https://bdoffice.deepthink-x.com/updates) · [更新日志](CHANGELOG.md) · [下载与校验说明](DOWNLOADS.md)
 
-## 当前版本：0.9.3
+## 当前版本：Windows 0.9.11 / Android 0.1.4
 
-2026-11-05 更新：合入经审查的上游编辑引擎与 Home Agent 更新，改进文档解析、表格原生转换、附件与办公 CLI 协作，保留大狗登录、账户、审批及编辑器内容保护。0.9.2 及已使用本更新通道的旧版用户可通过新版本提示下载后手动安装。本次沿用 0.9.2 的 Minisign 发布公钥。
+2026-11-17 更新：AI 大狗统一对话、记忆、任务和成果入口；手机通过二维码或完整配对码连接电脑。移动端采用 dsh-Go 的界面方式，支持任务确认与 Office/PDF 阅读。电脑继续持有模型、文件权限与任务执行状态，手机协作使用自部署连接服务。
 
-| 平台                | 下载                                                                                                                                                                                                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows x64         | [EXE 安装器](https://github.com/whdite/bdOffice/releases/download/v0.9.3/BigDogOffice-0.9.3-windows-x64.exe)                                                                                                                                                                                                              |
-| Linux x64           | [AppImage](https://github.com/whdite/bdOffice/releases/download/v0.9.3/BigDogOffice-0.9.3-linux-x64.AppImage) · [DEB](https://github.com/whdite/bdOffice/releases/download/v0.9.3/BigDogOffice-0.9.3-linux-x64.deb) · [RPM](https://github.com/whdite/bdOffice/releases/download/v0.9.3/BigDogOffice-0.9.3-linux-x64.rpm) |
-| macOS Apple Silicon | [DMG](https://github.com/whdite/bdOffice/releases/download/v0.9.3/BigDogOffice-0.9.3-macos-arm64.dmg) · [ZIP](https://github.com/whdite/bdOffice/releases/download/v0.9.3/BigDogOffice-0.9.3-macos-arm64.zip)                                                                                                             |
+| 平台 | 版本与下载 |
+| --- | --- |
+| Windows x64 | [0.9.11 EXE 安装器](https://github.com/whdite/bdOffice/releases/download/v0.9.11/BigDogOffice-0.9.11-windows-x64.exe) |
+| Android | [0.1.4 APK](https://github.com/whdite/bdOffice/releases/download/v0.9.11/AI-BigDog-0.1.4-android.apk) |
+| Linux x64（历史版本） | [0.9.3 AppImage / DEB / RPM](https://github.com/whdite/bdOffice/releases/tag/v0.9.3) |
+| macOS Apple Silicon（历史版本） | [0.9.3 DMG / ZIP](https://github.com/whdite/bdOffice/releases/tag/v0.9.3) |
+
+本轮仅发布新的 Windows 与 Android 包，macOS/Linux 未重建。APK 使用原有应用签名，支持覆盖升级；Minisign 发布密钥沿用 0.9.2 起的固定身份。
 
 Windows 安装器目前没有 Authenticode 发布者证书，可能显示“未知发布者”。macOS 包为 Apple Silicon（ARM64），采用 ad-hoc 签名，未使用 Apple Developer ID 或公证；Intel 包尚未提供。Minisign 用于检查文件来源及完整性，不能替代系统发布者认证。
 

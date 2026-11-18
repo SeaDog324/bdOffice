@@ -1,7 +1,31 @@
 /// Pure-function model for pivot timelines: a month-granularity date-range
 /// filter over one pivot dimension field. The range maps to a member set and
 /// rides the same hidden-items mechanism as slicers (applyPivotSlicer).
+import { z } from 'zod'
 import { parseDateParts } from './pivot-grouping'
+
+export const TIMELINE_STATE_PART = 'xl/bigdogTimelines.json'
+export const MAX_TIMELINE_STATE_BYTES = 256 * 1024
+export const timelinePaneStatesSchema = z.array(
+  z.object({
+    id: z.string().min(1).max(128),
+    sheetId: z.string().min(1).max(256),
+    pivotPath: z.string().max(512).regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
+    field: z.number().int().min(0).max(16_383),
+    range: z.object({ start: z.number().int(), end: z.number().int() })
+      .strict()
+      .refine((range) => range.start <= range.end)
+      .nullable(),
+  }).strict(),
+).max(512)
+export type TimelinePaneState = z.infer<typeof timelinePaneStatesSchema>[number]
+
+const timelinePartSchema = z.object({ version: z.literal(1), panels: timelinePaneStatesSchema }).strict()
+
+export function parseTimelineState(text: string): TimelinePaneState[] {
+  if (text.length > MAX_TIMELINE_STATE_BYTES) throw new Error('Timeline state exceeds its size limit.')
+  return timelinePartSchema.parse(JSON.parse(text)).panels
+}
 
 /// Months count monotonically from year 0 (`year * 12 + month - 1`), so ranges
 /// compare and iterate as plain integers across year boundaries.

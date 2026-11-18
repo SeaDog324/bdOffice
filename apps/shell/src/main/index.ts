@@ -4557,6 +4557,16 @@ function insideAnyRoot(path: string): boolean {
   return folderRootPaths().some((root) => isInsideRoot(root, path))
 }
 
+/** Whether the home UI can legitimately be showing this path: the folder
+ *  tree's roots (save folder + added roots) plus the exact recent and starred
+ *  files, which may live anywhere. The reveal channel opens Finder at the
+ *  path a renderer names, so it stays limited to that set. */
+function isRevealablePath(path: string): boolean {
+  if (insideAnyRoot(path)) return true
+  const key = resolve(path)
+  return [...readRecentFiles(), ...readStarredFiles()].some((p) => resolve(p) === key)
+}
+
 function isAnyRoot(path: string): boolean {
   const key = resolve(path)
   return folderRootPaths().some((root) => resolve(root) === key)
@@ -5223,10 +5233,8 @@ function createShellWindow(): void {
 // ---- routing: one dispatch function for every open path ----
 
 /**
- * Single source of truth for the open-dialog filter. Includes the still-legacy
- * .ppt binary so it is selectable and surfaces the explicit "not supported"
- * dialog via openDocumentPath instead of being grayed out; .doc/.dot route into
- * the docs import filter.
+ * Single source of truth for the open-dialog filter. Legacy .ppt and .doc/.dot
+ * route through their editors' conversion paths.
  */
 const OPEN_DIALOG_EXTENSIONS = [
   'docx',
@@ -5979,7 +5987,8 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.revealPath, (_event, path: unknown) => {
-    if (typeof path === 'string' && existsSync(path)) shell.showItemInFolder(path)
+    if (typeof path === 'string' && isRevealablePath(path) && existsSync(path))
+      shell.showItemInFolder(path)
   })
 
   ipcMain.handle(
@@ -8675,6 +8684,8 @@ app.whenReady().then(async () => {
     version: app.getVersion(),
     defaultSaveDir: () => defaultSaveDir(),
     openPath: (filePath) => routeDocumentPath(filePath),
+    isEditorOwnedFile: (path) =>
+      Boolean(tabManager?.isFileOpen(path) || findDetachedTabByPath(path)),
     docsControl: mcpDocsControl,
     slidesControl: mcpSlidesControl,
     sheetsControl: mcpSheetsControl,

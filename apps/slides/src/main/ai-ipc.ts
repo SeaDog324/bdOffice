@@ -34,7 +34,7 @@ import {
   type AiStreamRequest,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
-import { fetchRemoteImage } from '@genoffice/electron-utils'
+import { fetchRemoteImage, restrictFileToOwner, writeJsonAtomic } from '@genoffice/electron-utils'
 import {
   webSearchTool,
   imageSearchTool,
@@ -157,6 +157,7 @@ export function registerAiIpc(): void {
   setAiUserAgent(`GenOffice/${app.getVersion()}`)
 
   ipcMain.handle('ai:get-settings', (): AiSettings => {
+    restrictFileToOwner(AI_SETTINGS_PATH())
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
     // Normalize persisted settings and retire any historical Genspark selection.
@@ -165,7 +166,7 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJson(AI_SETTINGS_PATH(), settings)
+    writeJsonAtomic(AI_SETTINGS_PATH(), settings, 0o600)
   })
 
   ipcMain.handle('ai:log-run-failure', (_event, entry: AiRunFailure) => {

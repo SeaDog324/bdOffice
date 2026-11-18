@@ -61,7 +61,7 @@ export interface AgentLoopEvents<TSnapshot> {
   onToolExecuted?(event: ToolExecutedEvent<TSnapshot>): void
   /** a turn requested tools and they ran; the loop is going back to the model */
   onTurnEnd?(): void
-  /** tokens the provider billed for the turn that just streamed (per model call; compaction summary turns are not reported) */
+  /** Tokens billed for a model call, including conversation summaries. */
   onUsage?(usage: AgentTokenUsage): void
   onDone?(result: AgentRunResult): void
   onError?(error: string): void
@@ -126,6 +126,16 @@ function turnBudgetError(kind: 'text' | 'reasoning'): string {
   return `The model streamed more than ${mib} MiB of ${kind} in a single turn; the run was stopped. Please send the request again`
 }
 const COMPACT_KEEP_RECENT_BYTES = 96 * 1024
+const CONTEXT_CACHE_WARM_MS = 5 * 60 * 1000
+const STALE_DOCUMENT_CONTEXT_BYTES = 48 * 1024
+const OMITTED_DOCUMENT_CONTEXT =
+  '[Earlier document snapshot omitted. Read the current state before editing.]'
+const CURRENT_DOCUMENT_CONTEXT = '[The attached document state supersedes earlier snapshots.]'
+interface DocumentContextSnapshot {
+  omittedText: string
+  bytes: number
+  folded: boolean
+}
 /** Pre-truncation of each tool output in the summary request (the compaction request itself must not blow up on huge outputs) */
 const SUMMARIZE_TOOL_OUTPUT_MAX = 2_000
 const SUMMARIZE_TIMEOUT_MS = 30_000
@@ -640,6 +650,12 @@ export class AgentLoop<TSnapshot = unknown> {
   private responseCheckNotes = new Set<AgentMessage>()
   /** user message of the in-flight run; a failed run rolls it (and everything after) back out of history */
   private runUserMsg: AgentMessage | null = null
+  // Projection metadata belongs to this live Loop, never to persisted messages.
+  private readonly documentContexts = new WeakMap<
+    AgentMessage,
+    DocumentContextSnapshot
+  >()
+  private lastProviderRequestAt = 0
   /** usage the provider reported for the turn now streaming (null until it reports) */
   private turnUsage: AgentTokenUsage | null = null
   /** usage summed across the turns of the in-flight run (null when nothing reported) */
@@ -928,6 +944,8 @@ export class AgentLoop<TSnapshot = unknown> {
     this.abortController = new AbortController()
     this.runStartedAt = Date.now()
     this.armRunTimeout()
+    this.turnUsage = null
+    this.runUsage = null
     let context: string
     let format: (instruction: string, context: string) => string
     try {
@@ -940,21 +958,73 @@ export class AgentLoop<TSnapshot = unknown> {
       return
     }
     let userMsg: AgentMessage
+    let snapshot: DocumentContextSnapshot | undefined
     try {
       userMsg = {
         role: 'user',
         text: format(instruction, context),
         ...(images?.length ? { images } : {}),
       }
+      if (context) {
+        snapshot = {
+          omittedText: sanitizeAgentPayload(format(instruction, OMITTED_DOCUMENT_CONTEXT)),
+          bytes: utf8Size(context),
+          folded: false,
+        }
+      }
     } catch (error) {
       this.failRun(error)
       return
     }
-    void this.beginRun(userMsg).catch((error) => this.failRun(error))
+    void this.beginRun(userMsg, snapshot).catch((error) => this.failRun(error))
+  }
+
+  private foldEarlierDocumentContexts(hasFreshSnapshot: boolean): void {
+    const earlier = this.history
+      .map((message) => this.documentContexts.get(message))
+      .filter((snapshot): snapshot is DocumentContextSnapshot =>
+        snapshot !== undefined && !snapshot.folded,
+      )
+    if (earlier.length === 0) return
+    const cacheCold = Date.now() - this.lastProviderRequestAt >= CONTEXT_CACHE_WARM_MS
+    const tooLarge =
+      earlier.reduce((size, snapshot) => size + snapshot.bytes, 0) >
+      STALE_DOCUMENT_CONTEXT_BYTES
+    const compacting =
+      this.compactionEnabled() && historySize(this.history) > this.compactBudget().maxBytes
+    if (!hasFreshSnapshot || cacheCold || tooLarge || compacting) {
+      for (const snapshot of earlier) snapshot.folded = true
+    }
+  }
+
+  private projectedMessage(message: AgentMessage): AgentMessage {
+    const snapshot = this.documentContexts.get(message)
+    return message.role === 'user' && snapshot?.folded
+      ? { ...message, text: snapshot.omittedText }
+      : message
+  }
+
+  private providerMessages(): AgentMessage[] {
+    const latest = this.runUserMsg
+    const supersedesEarlier =
+      latest !== null &&
+      this.documentContexts.has(latest) &&
+      this.history.some((message) => {
+        const snapshot = this.documentContexts.get(message)
+        return message !== latest && snapshot !== undefined && !snapshot.folded
+      })
+    return this.history.map((message) =>
+      supersedesEarlier && message === latest && message.role === 'user'
+        ? { ...message, text: `${message.text}\n\n${CURRENT_DOCUMENT_CONTEXT}` }
+        : this.projectedMessage(message),
+    )
   }
 
   /** Compact (if needed), push the user message, then start the turn. Compaction failure doesn't block the run. */
-  private async beginRun(userMsg: AgentMessage): Promise<void> {
+  private async beginRun(
+    userMsg: AgentMessage,
+    snapshot?: DocumentContextSnapshot,
+  ): Promise<void> {
     const generation = this.generation
     if (this.persistenceAvailable()) {
       let restored: AgentSessionSnapshot | null = null
@@ -976,6 +1046,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.history = durableMessages(this.history).map((m) =>
       m.role === 'assistant' && m.reasoning ? { ...m, reasoning: undefined } : m,
     )
+    this.foldEarlierDocumentContexts(snapshot !== undefined)
     const execution = this.options.taskExecution?.() ?? this.options.persistence?.taskExecution?.()
     try {
       // Durable tasks count each provider call. Use mechanical compaction before admission.
@@ -998,6 +1069,7 @@ export class AgentLoop<TSnapshot = unknown> {
       userMsg = { ...userMsg, text: sanitizeAgentPayload(userMsg.text) }
     }
     this.runUserMsg = userMsg
+    if (snapshot) this.documentContexts.set(userMsg, snapshot)
     this.history.push(userMsg)
     if (execution) {
       const start = await execution.start(
@@ -1038,7 +1110,6 @@ export class AgentLoop<TSnapshot = unknown> {
       this.options.events?.onDone?.({ text: '', cancelled: true, turnLimit: false })
       return
     }
-    this.runUsage = null
     this.startTurn()
   }
 
@@ -1128,13 +1199,21 @@ export class AgentLoop<TSnapshot = unknown> {
     const cut = this.findCompactCut(keepRecentBytes)
     if (cut <= 0) return // no foldable prefix
     const generation = this.generation
-    const dropped = this.history.slice(0, cut)
+    const dropped = this.history.slice(0, cut).map((message) => this.projectedMessage(message))
     const opt = this.options.compaction === false ? undefined : this.options.compaction
     let summary: string | null = null
-    if (allowSummary && !opt?.disableLlmSummary) summary = await this.summarizeViaLlm(dropped)
+    let usage: AgentTokenUsage | null = null
+    if (allowSummary && !opt?.disableLlmSummary) {
+      ;({ text: summary, usage } = await this.summarizeViaLlm(dropped))
+    }
     // A reset may have cleared history or started a new conversation while
     // the summary was pending. Discard its result before touching that history.
     if (generation !== this.generation) return
+    if (usage) {
+      this.turnUsage = usage
+      this.mergeRunUsage()
+      this.options.events?.onUsage?.(usage)
+    }
     if (!summary) summary = mechanicalDigest(dropped)
     this.history = [
       { role: 'user', text: `${COMPACT_SUMMARY_HEADER}\n${summary}` },
@@ -1144,7 +1223,9 @@ export class AgentLoop<TSnapshot = unknown> {
   }
 
   /** Hand the folded conversation to the model for a summary; returns null on failure/timeout (falls back to the mechanical digest). */
-  private summarizeViaLlm(dropped: readonly AgentMessage[]): Promise<string | null> {
+  private summarizeViaLlm(
+    dropped: readonly AgentMessage[],
+  ): Promise<{ text: string | null; usage: AgentTokenUsage | null }> {
     // Slim down the summary request itself: pre-truncate tool outputs, strip images
     const slim: AgentMessage[] = dropped.map((m) => {
       if (m.role === 'tool') {
@@ -1163,11 +1244,14 @@ export class AgentLoop<TSnapshot = unknown> {
     // A single huge earlier user/assistant message (or tool input) can exceed
     // the compressor's budget even after slimming tool results. Fall back to
     // the bounded local digest instead of making another oversized request.
-    if (historySize(slim) > SUMMARIZE_INPUT_MAX_BYTES) return Promise.resolve(null)
+    if (historySize(slim) > SUMMARIZE_INPUT_MAX_BYTES) {
+      return Promise.resolve({ text: null, usage: null })
+    }
     return new Promise((resolve) => {
       let text = ''
       let textBytes = 0
       let settled = false
+      let usage: AgentTokenUsage | null = null
       let handle: AgentStreamHandle | null = null
       let cancelPending = false
       const signal = this.abortController?.signal
@@ -1188,7 +1272,7 @@ export class AgentLoop<TSnapshot = unknown> {
           cancelPending = true
           cancelHandle()
         }
-        resolve(v)
+        resolve({ text: v, usage })
       }
       const onAbort = () => finish(null, true)
       const timer = setTimeout(() => finish(null, true), SUMMARIZE_TIMEOUT_MS)
@@ -1221,6 +1305,9 @@ export class AgentLoop<TSnapshot = unknown> {
             },
             onToolCall: () => {
               /* the summary turn gets no tools */
+            },
+            onUsage: (reported) => {
+              if (!settled) usage = reported
             },
             onDone: () => finish(text.trim() || null),
             onError: () => finish(null),
@@ -1319,6 +1406,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.running = false
     this.cancelled = false
     this.history = []
+    this.lastProviderRequestAt = 0
     this.runUserMsg = null
   }
 
@@ -1547,6 +1635,7 @@ export class AgentLoop<TSnapshot = unknown> {
       if (!this.finalizing && this.activeTask?.supportsClarification)
         this.offeredToolDefinitions = [...this.offeredToolDefinitions, ASK_TASK_USER]
       const offeredTools = new Set(this.offeredToolDefinitions.map((tool) => tool.name))
+      this.lastProviderRequestAt = Date.now()
       this.handle = this.options.transport.stream(
         {
           system:
@@ -1558,7 +1647,7 @@ export class AgentLoop<TSnapshot = unknown> {
               ? '\nContinue the unfinished task from the recorded conversation and completed tool results. Do not repeat applied changes. Inspect current state before any remaining write.'
               : '') +
             (this.options.systemSuffix?.() ?? ''),
-          messages: [...this.history],
+          messages: this.providerMessages(),
           tools: this.offeredToolDefinitions,
         },
         {

@@ -267,18 +267,19 @@ export function rekeyRedactionStates(
  * override is a difference the reader's file now carries forever, and Excel
  * complains about it on open.
  */
-async function removeRedactionPart(
+async function removeWorkbookJsonPart(
   pkg: RedactionPackage,
   touchedEntries: Set<string>,
+  partPath: string,
+  relType: string,
 ): Promise<void> {
-  if (!(await pkg.has(REDACTION_PART_PATH))) return
-  pkg.remove(REDACTION_PART_PATH)
-  touchedEntries.add(REDACTION_PART_PATH)
+  if (!(await pkg.has(partPath))) return
+  pkg.remove(partPath)
+  touchedEntries.add(partPath)
 
   const relationships = await pkg.readText(WORKBOOK_RELS_PATH)
-  const withoutRel = relationships.replace(
-    new RegExp(`<Relationship\\b[^>]*Type="${REDACTION_REL_TYPE}"[^>]*/?>`),
-    '',
+  const withoutRel = relationships.replace(/<Relationship\b[^>]*\/>/g, (tag) =>
+    tag.includes(`Type="${relType}"`) ? '' : tag,
   )
   if (withoutRel !== relationships) {
     pkg.write(WORKBOOK_RELS_PATH, withoutRel)
@@ -286,9 +287,8 @@ async function removeRedactionPart(
   }
 
   const contentTypes = await pkg.readText(CONTENT_TYPES_PATH)
-  const withoutOverride = contentTypes.replace(
-    new RegExp(`<Override\\b[^>]*PartName="/${REDACTION_PART_PATH}"[^>]*/>`),
-    '',
+  const withoutOverride = contentTypes.replace(/<Override\b[^>]*\/>/g, (tag) =>
+    tag.includes(`PartName="/${partPath}"`) ? '' : tag,
   )
   if (withoutOverride !== contentTypes) {
     pkg.write(CONTENT_TYPES_PATH, withoutOverride)
@@ -309,27 +309,40 @@ export async function applyRedactionPart(
   // override in the package, so clearing the last mark did nothing: the next
   // open read the stale part and the span came back. Clearing is the one
   // operation that has to undo what setting did.
-  if (states.every((state) => state.marks.length === 0)) {
-    await removeRedactionPart(pkg, touchedEntries)
+  const content = states.every((state) => state.marks.length === 0)
+    ? null
+    : serializeRedactionPart(states)
+  await writeWorkbookJsonPart(pkg, touchedEntries, REDACTION_PART_PATH, REDACTION_REL_TYPE, content)
+}
+
+/** Write or remove an app-owned JSON part with its relationship and content type. */
+export async function writeWorkbookJsonPart(
+  pkg: RedactionPackage,
+  touchedEntries: Set<string>,
+  partPath: string,
+  relType: string,
+  content: string | null,
+): Promise<void> {
+  if (content === null) {
+    await removeWorkbookJsonPart(pkg, touchedEntries, partPath, relType)
     return
   }
 
-  const content = serializeRedactionPart(states)
-  if (await pkg.has(REDACTION_PART_PATH)) {
+  if (await pkg.has(partPath)) {
     // Re-save of a workbook that already carries marks. `add` would land the
     // path in MutationPlan.added and trip assertManifestPreserved's
     // "should have created … but it already existed".
-    pkg.write(REDACTION_PART_PATH, content)
+    pkg.write(partPath, content)
   } else {
-    pkg.add(REDACTION_PART_PATH, content)
+    pkg.add(partPath, content)
   }
-  touchedEntries.add(REDACTION_PART_PATH)
+  touchedEntries.add(partPath)
 
   const relationships = await pkg.readText(WORKBOOK_RELS_PATH)
-  if (!relationships.includes(`Type="${REDACTION_REL_TYPE}"`)) {
+  if (!relationships.includes(`Type="${relType}"`)) {
     const relationship =
       `<Relationship Id="${nextFreeRelationshipId(relationships)}" ` +
-      `Type="${REDACTION_REL_TYPE}" Target="gxRedactions.json"/>`
+      `Type="${relType}" Target="${partPath.split('/').at(-1)}"/>`
     pkg.write(
       WORKBOOK_RELS_PATH,
       relationships.replace('</Relationships>', `${relationship}</Relationships>`),
@@ -338,8 +351,8 @@ export async function applyRedactionPart(
   }
 
   const contentTypes = await pkg.readText(CONTENT_TYPES_PATH)
-  if (!contentTypes.includes(`PartName="/${REDACTION_PART_PATH}"`)) {
-    const override = `<Override PartName="/${REDACTION_PART_PATH}" ContentType="${REDACTION_CONTENT_TYPE}"/>`
+  if (!contentTypes.includes(`PartName="/${partPath}"`)) {
+    const override = `<Override PartName="/${partPath}" ContentType="${REDACTION_CONTENT_TYPE}"/>`
     pkg.write(CONTENT_TYPES_PATH, contentTypes.replace('</Types>', `${override}</Types>`))
     touchedEntries.add(CONTENT_TYPES_PATH)
   }

@@ -7,9 +7,8 @@ import { useI18n } from './i18n/locale'
 import { useModalDialog } from './modal-dialog'
 
 /// Timeline: a month-granularity date-range filter bound to one pivot date
-/// field. Like slicers it drives the pivot's hidden entries (applyPivotSlicer)
-/// and exists only within the session; the filtered output area persists
-/// through the pivot refresh write-back path.
+/// field. The pivot's hidden entries are saved with the workbook, and the
+/// panel and range are restored from BigDog's workbook metadata.
 
 export interface TimelineUiState {
   readonly id: string

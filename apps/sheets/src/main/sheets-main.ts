@@ -77,6 +77,7 @@ import {
   installRendererProtocol,
   registerRendererScheme,
   rendererUrl,
+  restrictFileToOwner,
   writeJsonAtomic,
   recoveryCopyDiskNewer,
   configuredAuthorName,
@@ -118,6 +119,11 @@ import {
   localMediaRoots,
 } from '@genoffice/ai-search'
 import { parseFileToText } from '@genoffice/file-parse'
+import {
+  MAX_TIMELINE_STATE_BYTES,
+  parseTimelineState,
+  TIMELINE_STATE_PART,
+} from '@genoffice/xlsx-gateway/domain/pivot-timeline'
 import type { CellEdit, SheetStructuralOps } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import {
   readArchiveEntriesText,
@@ -131,9 +137,10 @@ import {
 } from '@genoffice/xlsx-gateway/gateway/xlsx-connection-refresh'
 import type { PartReader } from '@genoffice/xlsx-gateway/gateway/xlsx-connections'
 import { parsePivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
+import { parseSlicerState } from '@genoffice/xlsx-gateway/gateway/xlsx-slicer'
 import { listWorkbookQueries } from '@genoffice/xlsx-gateway/gateway/xlsx-connections'
 import type { SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
-import { readWorkbookRedactionPart } from './workbook-redactions'
+import { manifestNamesSchema, readWorkbookRedactionPart } from './workbook-redactions'
 import type {
   AttachmentAddResult,
   AttachmentImageResult,
@@ -186,6 +193,8 @@ import {
   saveEditsChunkArraySchema,
   workbookSaveEditsChunkSchema,
   workbookSaveRequestSchema,
+  workbookSlicerStateRequestSchema,
+  workbookSlicerStateResultSchema,
   type WorkbookCreateDocumentResult,
   type WorkbookSaveRequest,
 } from '../shared/desktop-api'
@@ -2903,6 +2912,25 @@ export async function requestSheetsClose(
 
 let coreIpcRegistered = false
 
+/**
+ * CSV export targets a view's user approved through a save dialog, keyed by
+ * webContents id. exportCsv honors a renderer-supplied targetPath only when
+ * it is in this set — the Save-As CSV hand-off is the one flow where the
+ * renderer carries a path back to a write, and the grant is what keeps that
+ * from being a "renderer names any file, the main process writes it" channel.
+ */
+const csvExportGrantsByWc = new Map<number, Set<string>>()
+
+function grantCsvExportTarget(wcId: number, path: string): void {
+  let grants = csvExportGrantsByWc.get(wcId)
+  if (!grants) {
+    grants = new Set()
+    csvExportGrantsByWc.set(wcId, grants)
+    webContents.fromId(wcId)?.once('destroyed', () => csvExportGrantsByWc.delete(wcId))
+  }
+  grants.add(path)
+}
+
 export function registerSheetsIpc(): void {
   if (coreIpcRegistered) return
   coreIpcRegistered = true
@@ -3521,6 +3549,64 @@ export function registerSheetsIpc(): void {
     return workbookPivotDefinitionSchema.parse(parsePivotDefinition(pivotXml, cacheXml))
   })
 
+  ipcMain.handle(IPC_CHANNELS.readSlicerState, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookSlicerStateRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    // The slicer parts are read from the session snapshot in one sidecar
+    // extraction; the gateway parser does the rest.
+    const manifest = manifestNamesSchema.parse(
+      await entry.client.archiveManifest(session.snapshotPath),
+    )
+    const names = manifest.entries.map((archiveEntry) => archiveEntry.name)
+    const hasSlicerParts = names.some((name) =>
+      /^xl\/(?:slicers|timelines)\/[^/]+\.xml$/.test(name),
+    )
+    if (!hasSlicerParts) return []
+    // Worksheet parts and their rels are keys/lookups for the parser (host
+    // sheets, pivot binding), so both ride the paths() view; only the XML
+    // texts below are actually extracted.
+    const wanted = names.filter(
+      (name) =>
+        name === 'xl/workbook.xml' ||
+        name === 'xl/_rels/workbook.xml.rels' ||
+        /^xl\/(?:slicers|timelines|slicerCaches|timelineCaches|pivotTables)\/[^/]+\.xml$/.test(
+          name,
+        ) ||
+        /^xl\/pivotCache\/pivotCacheDefinition\d*\.xml$/.test(name) ||
+        /^xl\/worksheets\/(?:_rels\/)?[^/]+\.xml(?:\.rels)?$/.test(name),
+    )
+    const texts = await readArchiveEntriesText(entry.client, session.snapshotPath, wanted)
+    return workbookSlicerStateResultSchema.parse(
+      await parseSlicerState({
+        paths: async () => names,
+        readText: async (path) => {
+          const text = texts.get(path)
+          if (text === undefined) throw new Error(`Workbook is missing ${path}.`)
+          return text
+        },
+      }),
+    )
+  })
+
+  ipcMain.handle(IPC_CHANNELS.readTimelineState, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookSlicerStateRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    const manifest = z.object({
+      entries: z.array(z.object({ name: z.string(), uncompressedSize: z.number().nonnegative() })),
+    }).parse(await entry.client.archiveManifest(session.snapshotPath))
+    const part = manifest.entries.find(({ name }) => name === TIMELINE_STATE_PART)
+    if (!part) return []
+    if (part.uncompressedSize > MAX_TIMELINE_STATE_BYTES) {
+      throw new Error('Timeline state exceeds its size limit.')
+    }
+    const text = await readArchiveEntryText(entry.client, session.snapshotPath, TIMELINE_STATE_PART)
+    return parseTimelineState(text)
+  })
+
   // The workbook's refreshable web queries: the walk follows both shapes Excel
   // writes (a table part's relationship, or a legacy ExternalData_N name) and
   // returns the sheet and range each query fills. Read from the session
@@ -3638,7 +3724,16 @@ export function registerSheetsIpc(): void {
       if (response === 0) return { canceled: true, saveAsXlsxInstead: true }
       if (response === 2) return { canceled: true }
     }
+    // A renderer-supplied targetPath is honored only when this view's user
+    // picked exactly that path in a save dialog (the Save-As CSV hand-off).
+    // Without the grant check this channel was the suite's one "renderer
+    // names the file, the main process writes it" primitive: any renderer
+    // could overwrite any .csv on disk — or plant one anywhere — with
+    // attacker-chosen content, no dialog, no confirmation.
     let pickedPath = request.targetPath
+    if (pickedPath !== undefined && !csvExportGrantsByWc.get(event.sender.id)?.has(pickedPath)) {
+      pickedPath = undefined
+    }
     if (pickedPath === undefined) {
       const selection = await saveFileDialog(event, {
         defaultPath: request.fileName,
@@ -3801,6 +3896,7 @@ export function registerSheetsIpc(): void {
       // A CSV pick can't ride the xlsx pipeline: hand the path back so the
       // renderer serializes the active sheet through the CSV export channel.
       if (!macroEnabled && selection.filePath.toLowerCase().endsWith('.csv')) {
+        grantCsvExportTarget(event.sender.id, selection.filePath)
         return { canceled: true, csvSaveAsPath: selection.filePath }
       }
       targetPath = selection.filePath.toLowerCase().endsWith(`.${ext}`)
@@ -4160,6 +4256,7 @@ export function registerSheetsAiIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
+    restrictFileToOwner(SETTINGS_PATH())
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
     settings.provider = activeProvider(settings)
@@ -4175,7 +4272,7 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiSetSettings, (event, input: unknown) => {
     sessionFor(event)
     const settings = aiSettingsInputSchema.parse(input)
-    writeJsonAtomic(SETTINGS_PATH(), settings)
+    writeJsonAtomic(SETTINGS_PATH(), settings, 0o600)
   })
 
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {
@@ -4726,6 +4823,19 @@ async function writeWorkbookTo(
     sheetName: resolveSheetName(sheetId),
     ...group,
   }))
+  // Slicer panels: same sheetId → sheet name mapping as the other
+  // additions; part paths stay package-absolute.
+  const slicerState =
+    request.slicerState === null
+      ? null
+      : {
+          slicers: request.slicerState.slicers.map(({ sheetId, ...control }) => ({
+            ...control,
+            sheetName: resolveSheetName(sheetId),
+          })),
+          removals: [...request.slicerState.removals],
+          timelines: request.slicerState.timelines,
+        }
   // Recalculated formula values: sheetId → file sheet name, the same
   // resolution the cell edits use.
   const formulaValuesBySheet = new Map<
@@ -4807,6 +4917,7 @@ async function writeWorkbookTo(
       tableEdits,
       pivotAdditions,
       sparklineAdditions,
+      slicerState,
       formulaValues,
       pivotCacheRefreshPaths: request.pivotCacheRefreshPaths,
       // Output-area expansion from layout growth: sheetId → sheet name; the part
@@ -5097,6 +5208,11 @@ async function promptOdsImport(
 /// .xls, .tsv and the ODF imports (.ods/.ots) open as a converted copy in the temp dir; the session
 /// remembers the original's .xlsx sibling as the Save As default. .csv converts
 /// the same way but keeps its file identity, so Save writes values back to it.
+/** Legacy imports (.xls/.ods/.ots) hand the whole file to the sidecar's
+ *  calamine reader with no zip-gate in between; this file cap is the one
+ *  guard on the app side. Aligned with docs' MAX_OPEN_BYTES. */
+const MAX_LEGACY_IMPORT_BYTES = 512 * 1024 * 1024
+
 async function prepareWorkbookForOpen(
   client: XlsxSidecarClient,
   path: string,
@@ -5197,6 +5313,16 @@ async function prepareWorkbookForOpen(
       emptyCsv = converted.empty
       await writeFile(openPath, converted.buffer)
     } else {
+      // The sidecar's legacy import (calamine, for .xls/.ods/.ots) manages
+      // its own memory on the far side of the stdin protocol, and unlike
+      // .xlsx there is no zip-gate between the file and it — the file cap is
+      // the guard. Aligned with the app's 512 MB docx open cap.
+      const legacyStat = await stat(path)
+      if (legacyStat.size > MAX_LEGACY_IMPORT_BYTES) {
+        throw new Error(
+          `${tm('errTooLarge', { mb: MAX_LEGACY_IMPORT_BYTES / 1024 / 1024 })} (${(legacyStat.size / 1024 / 1024).toFixed(1)} MB)`,
+        )
+      }
       await client.convertWorkbook({ path, targetPath: openPath })
     }
   } catch (error) {

@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import {
+  chmodSync,
   closeSync,
+  existsSync,
   fsyncSync,
   mkdirSync,
   openSync,
@@ -37,6 +39,34 @@ const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuf
 // survives the rename onto the real document (genoffice#2145).
 const tempPathBeside = (filePath: string) =>
   join(dirname(filePath), `${basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`)
+
+const rescuePathFor = (filePath: string) =>
+  join(dirname(filePath), `${basename(filePath)}.unsaved.tmp`)
+
+/** Commit staged bytes or keep one named rescue copy when the target refuses a write. */
+async function commitStagedFile(
+  tmp: string,
+  filePath: string,
+  writeInPlace: () => Promise<void>,
+  witness?: ReturnType<typeof witnessBytes>,
+): Promise<void> {
+  let usedFallback = false
+  try {
+    await renameWithRetry(tmp, filePath)
+  } catch {
+    try {
+      await writeInPlace()
+    } catch (error) {
+      // A failed rescue rename leaves the completed staging bytes on disk.
+      await renameWithRetry(tmp, rescuePathFor(filePath)).catch(() => {})
+      throw error
+    }
+    usedFallback = true
+  }
+  publishSaveWitness(filePath, witness)
+  if (usedFallback) await unlink(tmp).catch(() => {})
+  await unlink(rescuePathFor(filePath)).catch(() => {})
+}
 
 async function syncFileBestEffort(path: string): Promise<void> {
   let handle
@@ -88,18 +118,7 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
     await unlink(tmp).catch(() => {})
     throw error
   }
-  try {
-    await renameWithRetry(tmp, filePath)
-    publishSaveWitness(filePath, witness)
-    return
-  } catch {
-    // fall through to the in-place write
-  }
-  // Keep the completed temp until the fallback lands: if that write fails
-  // or the process dies, the new bytes still exist somewhere on disk.
-  await writeFile(filePath, data)
-  publishSaveWitness(filePath, witness)
-  await unlink(tmp).catch(() => {})
+  await commitStagedFile(tmp, filePath, () => writeFile(filePath, data), witness)
 }
 
 async function renameWithRetry(tmp: string, filePath: string): Promise<void> {
@@ -124,15 +143,7 @@ export async function atomicCopyFile(source: string, filePath: string): Promise<
     await unlink(tmp).catch(() => {})
     throw error
   }
-  try {
-    await renameWithRetry(tmp, filePath)
-    return
-  } catch {
-    // fall through to the in-place write
-  }
-  // Keep the completed temp until the fallback lands, as atomicWriteFile does.
-  await copyFile(source, filePath)
-  await unlink(tmp).catch(() => {})
+  await commitStagedFile(tmp, filePath, () => copyFile(tmp, filePath))
 }
 
 /**
@@ -157,17 +168,7 @@ export async function atomicWriteVia(
     throw error
   }
   const witness = supportsSaveWitness(filePath) ? await witnessStagedFile(tmp) : undefined
-  try {
-    await renameWithRetry(tmp, filePath)
-    publishSaveWitness(filePath, witness)
-    return
-  } catch {
-    // fall through to the in-place copy
-  }
-  // Keep the completed temp until the fallback lands, as atomicWriteFile does.
-  await copyFile(tmp, filePath)
-  publishSaveWitness(filePath, witness)
-  await unlink(tmp).catch(() => {})
+  await commitStagedFile(tmp, filePath, () => copyFile(tmp, filePath), witness)
 }
 
 /**
@@ -176,7 +177,7 @@ export async function atomicWriteVia(
  * sleeps block the caller, which is acceptable for a few KB under a transient
  * Windows lock.
  */
-export function writeJsonAtomic(filePath: string, value: unknown): void {
+export function writeJsonAtomic(filePath: string, value: unknown, mode?: number): void {
   mkdirSync(dirname(filePath), { recursive: true })
   const json = JSON.stringify(value, null, 2)
   const tmp = tempPathBeside(filePath)
@@ -188,7 +189,7 @@ export function writeJsonAtomic(filePath: string, value: unknown): void {
     }
   }
   try {
-    writeFileSync(tmp, json, { encoding: 'utf8', flag: 'wx' })
+    writeFileSync(tmp, json, { encoding: 'utf8', flag: 'wx', mode })
     syncFileBestEffortSync(tmp)
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -201,11 +202,27 @@ export function writeJsonAtomic(filePath: string, value: unknown): void {
     }
   } catch (error) {
     if (isRetryableRename(error)) {
-      writeFileSync(filePath, json, 'utf8')
-      removeTemp()
+      try {
+        if (mode !== undefined && process.platform !== 'win32' && existsSync(filePath)) {
+          chmodSync(filePath, mode)
+        }
+        writeFileSync(filePath, json, { encoding: 'utf8', mode })
+      } finally {
+        removeTemp()
+      }
       return
     }
     removeTemp()
     throw error
+  }
+}
+
+/** Repair the mode of existing credentials files before reading them. */
+export function restrictFileToOwner(filePath: string): void {
+  if (process.platform === 'win32') return
+  try {
+    chmodSync(filePath, 0o600)
+  } catch {
+    // Retain read compatibility with filesystems that do not support POSIX modes.
   }
 }

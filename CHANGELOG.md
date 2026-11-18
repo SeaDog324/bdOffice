@@ -1,5 +1,25 @@
 # 更新日志
 
+## Windows 1.0.0
+
+### 更新内容
+
+- 旧版 .ppt 演示文稿可以转换为可编辑的 .pptx 副本。
+- Excel 切片器和时间线可随文件恢复，改进排序时的共享公式与导出计算。
+- 改进 Word 表格编辑、文档保存恢复和 PDF 页面顺序校验。
+- MCP 增加文档检查、按块读取和转换工具。大狗优化长会话上下文与摘要用量统计。
+- 升级 Electron 运行时，加强文件操作校验与旧格式导入限制。
+
+### 下载与校验
+
+- [Windows x64 安装包](https://github.com/whdite/bdOffice/releases/download/v1.0.0/BigDogOffice-1.0.0-windows-x64.exe)
+- [官网下载](https://bdoffice.deepthink-x.com/updates#downloads)
+- [Android 0.1.4 APK](https://github.com/whdite/bdOffice/releases/download/v0.9.11/AI-BigDog-0.1.4-android.apk)
+- [SHA-256 校验文件](https://github.com/whdite/bdOffice/releases/download/v1.0.0/SHA256SUMS.txt)
+
+安装包提供独立 Minisign 签名，沿用大狗Office 的发布公钥。
+
+
 ## Windows 0.9.11 / Android 0.1.4（2026-11-17）
 
 大狗Office Windows **0.9.11** · AI 大狗 Android **0.1.4**

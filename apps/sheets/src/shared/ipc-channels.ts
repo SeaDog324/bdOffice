@@ -72,6 +72,9 @@ export const IPC_CHANNELS = {
   revealLinkSource: 'shell:reveal-link-source',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',
+  /** Slicer/timeline controls the file carries (xl/slicers, xl/timelines) */
+  readSlicerState: 'workbook:read-slicer-state',
+  readTimelineState: 'workbook:read-timeline-state',
   /** The cells the reader withheld from the model (xl/gxRedactions.json) */
   readWorkbookRedactions: 'workbook:read-redactions',
   /** Data › Queries & Connections: the workbook's connections, read-only (xl/connections.xml) */

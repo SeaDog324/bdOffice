@@ -37,6 +37,7 @@ export interface McpRuntimeDeps {
   sheetsControl?: SheetsControl
   /** the bundled genoffice CLI, backing the headless create/read tools; absent when unavailable */
   cliRunner?: CliRunner
+  isEditorOwnedFile?: (path: string) => boolean
   /**
    * documents the user has open (list/read/close); absent in headless runs,
    * where there is no tab manager to ask
@@ -149,6 +150,7 @@ function buildTools(): McpToolDefinition[] {
         },
         docs: deps.docsControl,
         extraFormats,
+        isEditorOwnedFile: deps.isEditorOwnedFile,
         ...(cli ? { cli } : {}),
         ...(deps.resolveTarget ? { resolveTarget: deps.resolveTarget } : {}),
       },

@@ -1,0 +1,31 @@
+node_modules/
+dist/
+out/
+release/
+.build/
+target/
+coverage/
+
+# Generated artifacts and dependency-managed metadata.
+package-lock.json
+apps/*/build/
+apps/shell/build/THIRD-PARTY-NOTICES.txt
+packages/font-metrics/word-faces.json
+apps/docs/src/renderer/fonts/stand-in-boxes.json
+apps/docs/src/renderer/fonts/fonts.generated.css
+apps/docs/src/renderer/line-factors.generated.ts
+
+# Vendored third-party sources stay byte-identical to upstream.
+packages/*/src/vendor/
+apps/mobile/licenses/WEBRTC.md
+# Pinned upstream runtime and conformance sources retain their recorded hashes.
+packages/remote-protocol/src/
+packages/remote-crypto/src/
+packages/remote-transport/src/
+
+# LLM prompt text: prettier rewrites *_* markers and list indentation, changing what the model reads.
+apps/slides/src/renderer/ai/prompts/*.md
+
+# In-page extractor fragments: concatenated into one function body, kept verbatim.
+packages/html2docx/src/browser/
+

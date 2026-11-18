@@ -1,0 +1,112 @@
+.editor-approval-control {
+  margin: 6px 12px;
+  color: inherit;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.editor-approval-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.editor-approval-modes {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border, #a0a0a044);
+  border-radius: 7px;
+}
+.editor-approval-modes button,
+.editor-approval-error button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.editor-approval-modes button[aria-pressed='true'] {
+  background: var(--bg-secondary, #88888818);
+  box-shadow: 0 1px 3px #00000012;
+  font-weight: 600;
+}
+.editor-approval-control button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.editor-approval-control button:focus-visible {
+  outline: 2px solid var(--accent, #267565);
+  outline-offset: 2px;
+}
+.editor-approval-hint {
+  margin: 5px 0 0;
+  opacity: 0.7;
+  line-height: 1.5;
+}
+.editor-approval-review {
+  margin-top: 8px;
+  border: 1px solid var(--border, #a0a0a044);
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.6;
+}
+.editor-approval-review p {
+  margin: 0;
+}
+.editor-approval-error {
+  margin-top: 6px;
+}
+.editor-approval-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.editor-tool-approval {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #a0a0a044);
+  border-radius: 10px;
+  background: var(--bg-secondary, #8888880d);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.editor-tool-approval-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.editor-tool-approval code {
+  overflow-wrap: anywhere;
+}
+.editor-tool-approval details {
+  margin-top: 6px;
+}
+.editor-tool-approval pre {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.editor-tool-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.editor-tool-approval-actions button {
+  border: 1px solid var(--border, #a0a0a066);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.editor-tool-approval-actions button:last-child {
+  background: var(--accent, #267565);
+  color: #fff;
+}

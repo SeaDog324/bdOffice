@@ -1,0 +1,22 @@
+{
+  "name": "@bigdogoffice/computer-use",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Model-independent computer tools with an isolated Cua SDK host",
+  "exports": {
+    ".": "./src/index.ts",
+    "./worker": "./src/worker.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@trycua/cua-driver": "0.52.7",
+    "@genoffice/agent-core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

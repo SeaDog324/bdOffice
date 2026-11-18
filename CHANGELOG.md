@@ -20,7 +20,7 @@
 - [Android 0.1.4 APK](https://github.com/whdite/bdOffice/releases/download/v0.9.11/AI-BigDog-0.1.4-android.apk)
 - [macOS/Linux 0.9.3 历史版本](https://github.com/whdite/bdOffice/releases/tag/v0.9.3)
 
-手机协作使用自部署连接服务，电脑负责执行任务；本轮已完成 MuMu 本地真实模型联调，真机软键盘、公网 NAT/蜂窝和后台推送仍待验收。Windows 未配置 Authenticode；APK 沿用现有 Android 签名。
+手机通过自部署连接服务协作，由电脑执行任务。Windows 安装器和 Android APK 的签名与校验方式见下载说明。[手机协作配置](docs/REMOTE.md) · [下载与校验](DOWNLOADS.md)
 
 ### 文件校验
 

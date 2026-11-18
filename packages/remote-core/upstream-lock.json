@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/liguobao/ds-harness-remote",
+  "commit": "1c8687d3b7bb8167dd23eede1b291cef01736db8",
+  "license": "MIT",
+  "normalization": "terminal blank lines only",
+  "files": [
+    {
+      "file": "rtc-adapter.ts",
+      "sha256": "e99e3f99f82ba04a1f5c28d3c28054e8f078c220a528ae3ea1fc08b632a64aeb"
+    },
+    {
+      "file": "rtc-chunking.ts",
+      "sha256": "8766f275d1d47a9d97d856b092758bdae8c72de60a37fe5ffc6c97d7e1753870"
+    }
+  ]
+}

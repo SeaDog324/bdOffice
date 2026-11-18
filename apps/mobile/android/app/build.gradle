@@ -1,0 +1,28 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'office.bigdog.mobile'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'office.bigdog.mobile'
+        minSdk 26
+        targetSdk 35
+        versionCode 104
+        versionName '0.1.4'
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('BIGDOG_ANDROID_KEYSTORE')) {
+                storeFile file(System.getenv('BIGDOG_ANDROID_KEYSTORE'))
+                storePassword System.getenv('BIGDOG_ANDROID_STORE_PASSWORD')
+                keyAlias System.getenv('BIGDOG_ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('BIGDOG_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug { applicationIdSuffix '.dev' }
+        release { minifyEnabled false; signingConfig signingConfigs.release }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies { implementation 'io.github.webrtc-sdk:android:150.7871.01'; implementation 'com.squareup.okhttp3:okhttp:4.12.0'; implementation 'org.unifiedpush.android:connector:3.3.5'; implementation 'com.journeyapps:zxing-android-embedded:4.3.0' }

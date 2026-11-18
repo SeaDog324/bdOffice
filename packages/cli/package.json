@@ -1,0 +1,52 @@
+{
+  "name": "@genoffice/cli",
+  "version": "0.10.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "bigdogoffice: the BigDogOffice command line (create, convert, read, edit and render documents) built on the same engines as the app; runs headless on the app's bundled Node runtime",
+  "exports": {
+    ".": "./src/index.ts",
+    "./install": "./src/install.ts",
+    "./app-export": "./src/formats/app-export.ts",
+    "./agent-skills": "./src/agent-skills.ts",
+    "./control-protocol": "./src/control-protocol.ts",
+    "./args": "./src/args.ts",
+    "./mcp-launch": "./src/mcp-launch.ts"
+  },
+  "bin": {
+    "bigdogoffice": "./bin/bigdogoffice"
+  },
+  "scripts": {
+    "build": "node build.mjs && node collect-deps.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@genoffice/ai-provider": "*",
+    "@genoffice/ai-search": "*",
+    "@genoffice/docx-engine": "*",
+    "@genoffice/pdf2docx": "*",
+    "@genoffice/pipelines": "*",
+    "@genoffice/pptx-engine": "*",
+    "@genoffice/pptx-ops": "*",
+    "@genoffice/pptx-render": "*",
+    "@genoffice/xlsx-gateway": "*",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@tiptap/core": "3.31.0",
+    "jsdom": "^28.0.0",
+    "jszip": "^3.10.1",
+    "numfmt": "^3.2.6",
+    "pngjs": "^7.0.0",
+    "undici": "^6.29.1",
+    "zod": "^4.6.7",
+    "@genoffice/doc2docx": "*",
+    "@genoffice/hwp2docx": "*",
+    "@genoffice/odf2ooxml": "*",
+    "@rhwp/core": "0.8.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3"
+  }
+}

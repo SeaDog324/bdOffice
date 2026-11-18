@@ -1,0 +1,37 @@
+{
+  "name": "AI大狗",
+  "appid": "__UNI__B1D06A0",
+  "description": "大狗Office移动轻客户端：会话、消息和文件阅读",
+  "versionName": "0.1.4",
+  "versionCode": "104",
+  "transformPx": false,
+  "vueVersion": "3",
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>"
+        ]
+      }
+    }
+  },
+  "h5": {
+    "title": "AI 大狗",
+    "router": {
+      "mode": "hash"
+    }
+  },
+  "uniStatistics": {
+    "enable": false
+  }
+}

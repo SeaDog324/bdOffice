@@ -1,0 +1,87 @@
+{
+  "@trycua/cua-driver-darwin-arm64": {
+    "version": "0.52.7",
+    "license": "MIT AND MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@trycua/cua-driver-darwin-x64": {
+    "version": "0.52.7",
+    "license": "MIT AND MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@trycua/cua-driver-linux-arm64-gnu": {
+    "version": "0.52.7",
+    "license": "MIT AND MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@trycua/cua-driver-linux-x64-gnu": {
+    "version": "0.52.7",
+    "license": "MIT AND MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@trycua/cua-driver-win32-arm64-msvc": {
+    "version": "0.52.7",
+    "license": "MIT AND MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@trycua/cua-driver-win32-x64-msvc": {
+    "version": "0.52.7",
+    "license": "MIT AND MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/core": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node-darwin-arm64": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node-darwin-x64": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node-linux-arm64-gnu": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node-linux-arm64-musl": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node-linux-x64-gnu": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node-linux-x64-musl": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node-win32-arm64-msvc": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "@ubjs/node-win32-x64-msvc": {
+    "version": "0.31.0-3",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  },
+  "mediabunny": {
+    "version": "1.65.2",
+    "license": "MPL-2.0",
+    "notice": "packages/computer-use/THIRD_PARTY.md"
+  }
+}

@@ -1,0 +1,72 @@
+.office-task-panel {
+  padding: 8px 10px;
+  margin: 6px 0;
+  border: 1px solid var(--border, currentColor);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.office-task-panel > summary,
+.office-result-record > summary {
+  cursor: pointer;
+}
+.office-task-item,
+.office-result-file {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border, currentColor);
+}
+.office-task-item p,
+.office-result-file p {
+  margin: 6px 0;
+}
+.office-task-actions,
+.office-result-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.office-task-actions button,
+.office-result-file button {
+  border: 1px solid var(--border, currentColor);
+  background: var(--surface, transparent);
+  color: inherit;
+  border-radius: 5px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.office-task-actions button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.office-result-record {
+  margin-top: 8px;
+}
+.office-result-difference {
+  margin-top: 6px;
+}
+.office-result-difference > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+}
+.office-result-difference pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  margin: 3px 0;
+}
+.office-task-question textarea {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: var(--surface, transparent);
+  border: 1px solid var(--border, currentColor);
+  border-radius: 5px;
+  padding: 6px;
+}

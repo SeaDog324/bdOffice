@@ -2,9 +2,11 @@
 
 ## 用户下载
 
-当前提供 Windows 0.9.11 与 Android 0.1.4；macOS/Linux 的历史版本仍为 [0.9.3](https://github.com/whdite/bdOffice/releases/tag/v0.9.3)。Android APK 的应用 ID 和签名保持不变，支持覆盖升级。
+GitHub Releases 当前提供 Windows 0.9.11 与 Android 0.1.4。Android APK 使用原有应用 ID 与签名，支持覆盖升级。[macOS 与 Linux 历史安装包](https://github.com/whdite/bdOffice/releases/tag/v0.9.3)
 
 从 [最新 Release](https://github.com/whdite/bdOffice/releases/latest) 选择与系统、CPU 架构匹配的安装包。国内用户也可使用[下载门户](https://bdoffice.deepthink-x.com/updates)。
+
+要自行构建应用，请检出本仓库的 `main` 分支并按平台准备构建环境。[源码构建](docs/BUILD.md)
 
 每个安装包附带同名 `.minisig` 文件；`SHA256SUMS.txt` 和 `release-manifest.json` 也有各自签名。请先验证文件再安装。
 

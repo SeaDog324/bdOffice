@@ -1,0 +1,22 @@
+.dog-illustration {
+  display: block;
+  width: 112px;
+  max-width: 100%;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.dog-illustration-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+}
+
+.workspace-chat-welcome-mascot.dog-illustration,
+.workspace-chat-empty-mascot.dog-illustration {
+  width: clamp(88px, 20cqw, 132px);
+  height: auto;
+  margin-inline: auto;
+}

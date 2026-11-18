@@ -1,0 +1,45 @@
+.release-notice {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  margin: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  -webkit-app-region: no-drag;
+}
+.release-notice button {
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  height: 26px;
+}
+.release-notice button:hover {
+  background: var(--hover);
+}
+.release-notice button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.release-notice-link {
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.release-notice-dismiss {
+  padding: 0 7px;
+  flex: none;
+}
+.release-notice-error {
+  font-size: 11px;
+  max-width: 140px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

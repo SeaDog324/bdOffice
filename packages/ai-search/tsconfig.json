@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@genoffice/ai-provider": [
+        "../ai-provider/src/index.ts"
+      ],
+      "@genoffice/electron-utils/remote-image": [
+        "../electron-utils/src/remote-image.ts"
+      ],
+      "@genoffice/electron-utils/safe-remote-url": [
+        "../electron-utils/src/safe-remote-url.ts"
+      ],
+      "@genoffice/electron-utils/generated-images": [
+        "../electron-utils/src/generated-images.ts"
+      ]
+    }
+  },
+  "include": [
+    "src"
+  ]
+}

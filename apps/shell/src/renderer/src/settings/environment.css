@@ -1,0 +1,95 @@
+.environment-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.env-summary {
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+  font-weight: 600;
+}
+.env-summary small {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 6px;
+}
+.env-actions,
+.env-links,
+.env-connect {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.env-scope,
+.env-check p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+}
+.env-check {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.env-check > div {
+  min-width: 0;
+}
+.env-status {
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.env-status.blocked,
+.env-status.degraded,
+.env-error {
+  color: var(--text);
+  font-weight: 600;
+}
+.env-task {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-subtle);
+  padding: 14px;
+  border-radius: 10px;
+}
+.env-task ol {
+  margin: 10px 0;
+  padding-inline-start: 20px;
+}
+.env-task li {
+  padding: 5px 0;
+}
+.env-task li span + span {
+  color: var(--text-muted);
+  margin-inline-start: 14px;
+  font-size: 12px;
+}
+.env-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+.env-history {
+  display: flex;
+  gap: 20px;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.env-introduction {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(64px, 15%, 88px);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.env-illustration.dog-illustration {
+  width: 100%;
+}

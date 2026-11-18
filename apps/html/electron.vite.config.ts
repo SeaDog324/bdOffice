@@ -1,0 +1,17 @@
+import react from '@vitejs/plugin-react'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+
+export default defineConfig({
+  // Workspace packages ship TS source, including shared AI and project stores.
+  main: {},
+  preload: {
+    plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/i18n', '@genoffice/electron-utils'] })],
+  },
+  renderer: {
+    plugins: [react()],
+    server: {
+      port: Number(process.env.HTML_DEV_PORT) || 5178,
+      strictPort: Boolean(process.env.HTML_DEV_PORT),
+    },
+  },
+})

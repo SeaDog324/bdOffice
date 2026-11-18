@@ -1,0 +1,24 @@
+{
+  "name": "@bigdogoffice/remote-server",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --external:ws --outfile=dist/main.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dsh-remote/protocol": "*",
+    "ws": "^8.21.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.5",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}

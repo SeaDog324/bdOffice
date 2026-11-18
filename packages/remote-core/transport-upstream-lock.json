@@ -1,0 +1,71 @@
+{
+  "repository": "https://github.com/liguobao/ds-harness-remote",
+  "commit": "1c8687d3b7bb8167dd23eede1b291cef01736db8",
+  "license": "MIT",
+  "files": [
+    {
+      "file": "packages/remote-protocol/src/close-semantics.ts",
+      "sha256": "b744b34d58eec1a49f15b0bb03d8d41fe36d97796e7f7bee79155ae3a254b4db"
+    },
+    {
+      "file": "packages/remote-protocol/src/index.ts",
+      "sha256": "41c7e5721286594d4e6c4d6471dca051da2151392fe7b2fcd06709ea9063a3bb"
+    },
+    {
+      "file": "packages/remote-protocol/src/loopback.ts",
+      "sha256": "aa4d678fabc4069b33e97ce2b2d65515d16388024dcd2b4eb57bdeed9b41b88e"
+    },
+    {
+      "file": "packages/remote-protocol/src/wire-json.ts",
+      "sha256": "8194e4e2c8c54df7d32206a54f8d2cc773f14fac5053e2baa40049900362d81c"
+    },
+    {
+      "file": "packages/remote-crypto/src/index.ts",
+      "sha256": "b9e0e0a0a903d51af41807b1e81ef0bb8506b80ef36c4744df535c1935445d3d"
+    },
+    {
+      "file": "packages/remote-crypto/src/noise.ts",
+      "sha256": "f697bbb63759e420ada08b1e110af2f1734230791056388cbfe33125ca769d1b"
+    },
+    {
+      "file": "packages/remote-transport/src/adaptive-transport.ts",
+      "sha256": "b73746d0fdeee11bffdf1c7c29d3f2de3cd799f5ecd579a4deb1239fcfc3f5fd"
+    },
+    {
+      "file": "packages/remote-transport/src/control-lease.ts",
+      "sha256": "ab51795d0081c9e44858819051c81ec6254959671ff4b2bd8fcccbf06f7124fa"
+    },
+    {
+      "file": "packages/remote-transport/src/index.ts",
+      "sha256": "6253db2d4936598dc8f6be45f1ca6efecd76437f7d1bd2a6c48d2a31d8a29335"
+    },
+    {
+      "file": "packages/remote-transport/src/rtc-adapter.ts",
+      "sha256": "c7a67eddf944ce7fa03b9f171a12e850265aff31a1c29284ac5caf7c3b673c15"
+    },
+    {
+      "file": "packages/remote-transport/src/rtc-chunking.ts",
+      "sha256": "b06930d8166b7dc7738434889291b35fd6ecb50f16d762b72bdf0061e4f81ab7"
+    },
+    {
+      "file": "packages/remote-transport/src/rtc-data-channel.ts",
+      "sha256": "7ef04b10d02d8935c6c1c24c0f318bb69cef98c225c590b5b9d35abcdd0a03ca"
+    },
+    {
+      "file": "packages/remote-transport/src/serial-send.ts",
+      "sha256": "9873e2f2e8325514482c9c5c4ed8bfef99079cf426805e82135a64a5cbbdcb68"
+    },
+    {
+      "file": "packages/remote-transport/src/transport.ts",
+      "sha256": "d02aad6f231ff3dc85b169ac0c997fc7fa2ec2ea3e5f169af229809fa9054548"
+    },
+    {
+      "file": "packages/remote-transport/src/util.ts",
+      "sha256": "08151ac50974d89e10ca6393fb90f8d6b103004ba6043cb7878fcab34c7ad0f1"
+    },
+    {
+      "file": "packages/remote-transport/src/websocket-backpressure.ts",
+      "sha256": "9a05143255057c3048b0bc8489b83513f055da744f4efe42472f92a06aadcaba"
+    }
+  ]
+}

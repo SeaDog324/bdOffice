@@ -1,0 +1,29 @@
+{
+  "name": "@bigdogoffice/remote-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Transport-neutral BigDog Session client and reviewed Remote platform primitives",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rtc": "./src/vendor/dsh-remote/rtc-adapter.ts",
+    "./transport": "./src/secure-client.ts",
+    "./host": "./src/host.ts",
+    "./offline": "./src/offline.ts",
+    "./pairing": "./src/pairing.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@genoffice/project-store": "*",
+    "@dsh-remote/protocol": "*",
+    "@dsh-remote/crypto": "*",
+    "@dsh-remote/webrtc": "*",
+    "werift": "^0.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

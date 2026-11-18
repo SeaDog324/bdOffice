@@ -1,2 +1,27 @@
-*.md text eol=lf
+# Normalize line endings: everything text is committed with LF and checked
+# out as LF on every platform, so Windows clones (core.autocrlf=true) don't
+# fail the incremental prettier --check CI gate on CRLF.
+* text=auto eol=lf
+
+# Binary assets — never normalized or diffed as text.
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.ods binary
+*.pdf binary
 *.png binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Preserve upstream notice formatting, including intentional trailing blanks.
+apps/mobile/licenses/WEBRTC.md whitespace=-blank-at-eol,-blank-at-eof
+
+# Keep pinned, hashed transport snapshots byte-identical across platforms.
+packages/remote-protocol/src/** -text whitespace=cr-at-eol
+packages/remote-crypto/src/** -text whitespace=cr-at-eol
+packages/remote-transport/src/** -text whitespace=cr-at-eol
+packages/remote-core/src/vendor/** -text whitespace=cr-at-eol

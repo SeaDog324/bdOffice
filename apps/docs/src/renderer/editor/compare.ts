@@ -12,6 +12,8 @@ export interface CompareEntry {
   left?: string
   /** paragraph text in the compared document */
   right?: string
+  /** Recorded location for an Agent round, when known. */
+  location?: string
 }
 
 /** visible block -> comparable plain text (tables/objects fall back to previews) */

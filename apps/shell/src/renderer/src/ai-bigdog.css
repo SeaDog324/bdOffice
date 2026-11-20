@@ -176,6 +176,35 @@
   max-height: 220px;
   overflow: auto;
 }
+.workspace-chat-work-group {
+  min-width: 0;
+  margin: 4px 0;
+}
+.workspace-chat-work-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 9px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+.workspace-chat-work-steps {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--border-subtle);
+}
+.workspace-chat-work-steps[hidden] {
+  display: none;
+}
 .ai-bigdog-chat .workspace-chat-permission-actions {
   flex-wrap: wrap;
 }
@@ -190,6 +219,7 @@
   text-overflow: clip;
 }
 .ai-bigdog-chat .workspace-chat-permission.pending .workspace-chat-permission-actions {
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 .ai-bigdog-chat .workspace-chat-dog-meme-image {
@@ -452,99 +482,6 @@
 .ai-bigdog-chat .workspace-chat-header-actions {
   flex-wrap: wrap;
 }
-.ai-bigdog-chat .workspace-chat-context-summary {
-  padding: 4px 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.conversation-context {
-  position: absolute;
-  inset: 0;
-  z-index: 22;
-  background: var(--surface);
-  color: var(--text);
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  overflow: auto;
-}
-.conversation-context header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-.conversation-context h3 {
-  font-size: 14px;
-  margin: 12px 0 8px;
-}
-.conversation-context p,
-.conversation-context small {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-.conversation-context small {
-  display: block;
-}
-.conversation-context button,
-.conversation-context input:not([type='checkbox']) {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  padding: 7px 10px;
-}
-.conversation-context button {
-  cursor: pointer;
-}
-.conversation-context button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.conversation-context button:hover {
-  background: var(--hover);
-}
-.context-sections {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 18px;
-  min-height: 180px;
-  flex: 1;
-}
-.context-sections section {
-  min-width: 0;
-  overflow: auto;
-}
-.context-sections label {
-  display: flex;
-  align-items: start;
-  gap: 8px;
-  padding: 8px 0;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.context-sections input[type='checkbox'] {
-  flex-shrink: 0;
-  accent-color: var(--accent);
-}
-.context-file {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 6px 0;
-  gap: 5px;
-  font-size: 13px;
-}
-.context-file span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.conversation-context footer {
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-}
 .ai-bigdog-chat .ai-model-picker {
   align-self: center;
 }
@@ -556,26 +493,6 @@
 .ai-bigdog-chat .workspace-chat-composer-actions > .workspace-chat-approval {
   grid-column: 1 / -1;
   min-width: 0;
-}
-.ai-bigdog-chat .workspace-chat-context-summary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-}
-.ai-bigdog-chat .workspace-chat-context-summary button {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  border-radius: 8px;
-  padding: 6px 10px;
-  white-space: nowrap;
-  font: inherit;
-  cursor: pointer;
-}
-.ai-bigdog-chat .workspace-chat-context-summary button:hover {
-  background: var(--hover);
 }
 .ai-bigdog-chat .workspace-chat-file-drop {
   position: absolute;

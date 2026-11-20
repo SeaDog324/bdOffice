@@ -19,7 +19,11 @@ import type {
   AssistantTaskView,
   TaskTargetVersion,
 } from '../../shared/assistant-task-api'
-import { observeTaskDocument, type DocumentObservation } from '../agent-tasks/document-observation'
+import {
+  observeTaskDocument,
+  sameTaskTarget,
+  type DocumentObservation,
+} from '../agent-tasks/document-observation'
 import type { TaskExecutorBinding } from '../agent-tasks/service'
 import type { ManagedSessionStore, SessionContextSelection } from '@genoffice/project-store'
 import { contextSelection, sessionMemoryContext } from './memory-context'
@@ -675,6 +679,14 @@ function toolCheckpointPath(call: AgentToolCall): string {
     return stringInput(input, 'outputPath').trim()
   return stringInput(input, 'path').trim()
 }
+
+// Ordinary edits with recoverable checkpoints and their corresponding saves.
+const ROUND_DOCUMENT_TOOLS = new Set([
+  'docx.edit', 'docx.format', 'docx.insert_content', 'docx.save',
+  'xlsx.write_range', 'xlsx.set_formula', 'xlsx.format_range', 'xlsx.save',
+  'pptx.edit', 'pptx.save', 'pdf.annotate',
+  'md.edit', 'md.insert', 'md.save', 'office.save',
+])
 
 const DEFAULT_WORKSPACE_COMMANDS = new Set([
   'cmd',
@@ -1462,6 +1474,13 @@ export interface DocumentSnapshot {
 
 export type DocumentCommand = Record<string, unknown>
 
+interface RunRestoreHead {
+  modelHash?: string
+  diskHash?: string
+}
+
+class RoundVersionConflict extends Error {}
+
 export interface MutationResult {
   ok: boolean
   changed: number
@@ -1494,7 +1513,12 @@ export interface DocumentSession {
   /** Return an editor-native rollback token after the run's edits are grouped. */
   endAgentRun?(): Promise<unknown>
   /** Restore the exact pre-run model, then make it authoritative for this session. */
-  restoreAgentRun?(snapshot: DocumentSnapshot, token: unknown, mutationCount: number): Promise<void>
+  restoreAgentRun?(
+    snapshot: DocumentSnapshot,
+    token: unknown,
+    mutationCount: number,
+    expected?: RunRestoreHead,
+  ): Promise<void>
   /** Live editor review surface (comments/revisions). */
   review?(command: DocumentCommand): Promise<unknown>
   /** Render one slide for review/vision. Unsupported sessions return null. */
@@ -1540,7 +1564,12 @@ export interface LiveDocumentAdapter {
   rollback(): Promise<void>
   beginAgentRun?(): Promise<void>
   endAgentRun?(): Promise<unknown>
-  restoreAgentRun?(snapshot: DocumentSnapshot, token: unknown, mutationCount: number): Promise<void>
+  restoreAgentRun?(
+    snapshot: DocumentSnapshot,
+    token: unknown,
+    mutationCount: number,
+    expected?: DocumentSnapshot,
+  ): Promise<void>
   review?(command: DocumentCommand): Promise<unknown>
   renderSlide?(slide: number): Promise<PptxRenderResult>
   /** Apply a bounded visual repair to top-level elements on one PPTX slide. */
@@ -3116,11 +3145,20 @@ export class HeadlessDocumentSession {
     this.options.onChanged?.(this.path, false)
   }
 
-  async restoreAgentRun(snapshot: DocumentSnapshot): Promise<void> {
+  async restoreAgentRun(
+    snapshot: DocumentSnapshot,
+    _token?: unknown,
+    _mutationCount?: number,
+    expected?: RunRestoreHead,
+  ): Promise<void> {
     return withDocumentOperationLock(this.path, async () => {
       await this.options.assertWritable?.(this.path, 'rollback')
       await this.load()
       await this.assertUnchangedOnDisk()
+      if (
+        (expected?.diskHash && expected.diskHash !== this.diskFingerprint) ||
+        (expected?.modelHash && expected.modelHash !== bytesFingerprint(this.bytes))
+      ) throw new RoundVersionConflict('The document changed before this round could be reverted.')
       if (snapshot.type !== this.type)
         throw new Error(`The rollback snapshot type does not match ${basename(this.path)}.`)
       const restored = new Uint8Array(Buffer.from(snapshot.bytesBase64, 'base64'))
@@ -3379,10 +3417,17 @@ export class LiveDocumentSession implements DocumentSession {
     snapshot: DocumentSnapshot,
     token: unknown,
     mutationCount: number,
+    expected?: RunRestoreHead,
   ): Promise<void> {
     return withDocumentOperationLock(this.path, async () => {
+      const current = expected?.modelHash ? await this.adapter.snapshot() : undefined
+      if (
+        (expected?.modelHash && current &&
+          bytesFingerprint(Buffer.from(current.bytesBase64, 'base64')) !== expected.modelHash) ||
+        (expected?.diskHash && bytesFingerprint(await readFile(this.path)) !== expected.diskHash)
+      ) throw new RoundVersionConflict('The document changed before this round could be reverted.')
       if (this.adapter.restoreAgentRun) {
-        await this.adapter.restoreAgentRun(snapshot, token, mutationCount)
+        await this.adapter.restoreAgentRun(snapshot, token, mutationCount, current)
       } else {
         for (let index = 0; index < Math.max(1, mutationCount); index += 1)
           await this.adapter.rollback()
@@ -3731,6 +3776,8 @@ interface ActiveAgentRun {
   id: string
   startedAt: string
   checkpoints: Map<string, PersistedRunCheckpoint>
+  /** Worktree heads explicitly approved for this active run. */
+  approvedDocuments: Map<string, TaskTargetVersion>
   failed?: boolean
   cancelled?: boolean
 }
@@ -3855,6 +3902,7 @@ function abortablePreparation<T>(operation: () => Promise<T>, signal: AbortSigna
 }
 
 interface RuntimeSession {
+  reverting?: boolean
   taskExecution?: AgentTaskExecution
   boundDocument?: BoundDocumentContext
   record: PersistedSession
@@ -4625,6 +4673,8 @@ interface PendingToolPermission {
   description: string
   expiresAt?: number
   resolve(allowed: boolean): void
+  approveRound?(): void
+  cancel(): void
   expire(): void
   timer?: ReturnType<typeof setTimeout>
   removeAbort?: () => void
@@ -5931,6 +5981,18 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
       : ''
     const checkpoint = active && path ? active.checkpoints.get(path) : undefined
     if (!checkpoint) return
+    if (active.approvedDocuments.size && requestedPath) {
+      const key = pathIdentity(await runtime.workspace.resolvePath(requestedPath))
+      const previous = active.approvedDocuments.get(key)
+      if (previous) {
+        const next = !execution.isError && ROUND_DOCUMENT_TOOLS.has(call.name) && !call.name.endsWith('.save')
+          ? await this.documentRoundHead(runtime, requestedPath)
+          : undefined
+        if (next && next.diskDigest === previous.diskDigest && next.fileIdentity === previous.fileIdentity)
+          active.approvedDocuments.set(key, next)
+        else active.approvedDocuments.delete(key)
+      }
+    }
     if (execution.isError) {
       checkpoint.failed = true
       if (call.name.endsWith('.save')) checkpoint.saveFailed = true
@@ -6404,6 +6466,62 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
     }
   }
 
+  async openWordReview(sessionId: string, runId: string, path: string): Promise<void> {
+    const runtime = await this.runtimeFor(sessionId)
+    const review =
+      runtime.record.runs?.find((run) => run.review.id === runId)?.review ??
+      (await this.evidenceStore.get(sessionId, runId))
+    const change = review?.changes.find((item) => item.path === path && item.type === 'docx')
+    const evidence = change?.evidence
+    if (!review || review.historical || !change || change.operation === 'deleted' || !evidence)
+      throw new Error('The Word revision record is unavailable.')
+    const full = await runtime.workspace.resolvePath(change.path)
+    if (fileTypeFor(full) !== 'docx' || !this.options.openFile || !this.options.liveDocument)
+      throw new Error('The Word review cannot be opened in this editor.')
+    await this.options.openFile(full)
+    const blocks = evidence.details.flatMap((detail) =>
+      detail.location.kind === 'block'
+        ? [{
+            ...(detail.before === undefined ? {} : { before: detail.before }),
+            ...(detail.after === undefined ? {} : { after: detail.after }),
+            location: '#' + detail.location.index,
+          }]
+        : [],
+    )
+    const data: import('../../../../docs/src/shared/agent-round-review').WordRoundReview = {
+      runId: review.id,
+      completedAt: review.completedAt,
+      state: review.state,
+      ...(evidence.beforeVersion ? { baseVersion: evidence.beforeVersion } : {}),
+      ...(evidence.afterVersion ? { resultVersion: evidence.afterVersion } : {}),
+      changes: blocks.slice(0, 100),
+      fileChangeCount: evidence.details.length - blocks.length + (evidence.resources?.length ?? 0),
+      incomplete: evidence.incomplete || evidence.omitted > 0 || blocks.length > 100,
+    }
+    const readyDeadline = Date.now() + 12_000
+    let readinessError: unknown
+    do {
+      const adapter = await this.options.liveDocument(full, 'docx')
+      if (adapter?.review) {
+        let ready = true
+        try {
+          await adapter.getContext?.()
+        } catch (error) {
+          ready = false
+          readinessError = error
+        }
+        if (ready) {
+          const result = await adapter.review({ kind: 'show_round_review', path: full, data })
+          if (result && typeof result === 'object' && 'ok' in result && result.ok === true) return
+          if (!result || typeof result !== 'object' || !('loading' in result) || result.loading !== true)
+            throw new Error('The Word editor could not show the round comparison.')
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 90))
+    } while (Date.now() < readyDeadline)
+    throw new Error('The Word editor did not become ready for review.', { cause: readinessError })
+  }
+
   async fileTaskResultRecords(sessionId: string): Promise<PortableResultRecord[]> {
     return [
       ...(await this.evidenceStore.list(sessionId)).reviews.map(portableResult),
@@ -6437,21 +6555,34 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
     await this.evidenceStore.removeSession(sessionId)
   }
 
+  private async documentRoundHead(
+    runtime: RuntimeSession,
+    path: string,
+  ): Promise<TaskTargetVersion | undefined> {
+    const active = runtime.activeAgentRun
+    if (!active) return
+    const observation = await this.observeAssistantTarget(runtime.record.id, path, active.id)
+      .catch(() => undefined)
+    const head = observation?.version
+    if (head?.complete && head.exists && head.diskDigest && head.type && SESSION_FILE_TYPES.has(head.type))
+      return head
+  }
+
   private async requestToolPermission(
     runtime: RuntimeSession,
     call: AgentToolCall,
     level: ToolPermissionLevel,
     signal?: AbortSignal,
     parentCall?: AgentToolCall,
+    round?: { path: string; baseVersion: string; approved?: boolean },
   ): Promise<boolean> {
     const execution = runtime.taskExecution
-    if (!execution) return this.requestToolPermissionUi(runtime, call, level, signal)
+    const ask = () => this.requestToolPermissionUi(runtime, call, level, signal, round)
+    if (!execution) return ask()
     await execution.beforeApproval?.(call, true, parentCall)
     let allowed = false
     try {
-      allowed = await runtime.loop.waitForTaskDecision(() =>
-        this.requestToolPermissionUi(runtime, call, level, signal),
-      )
+      allowed = await runtime.loop.waitForTaskDecision(ask)
       return allowed
     } finally {
       await execution.afterApproval?.(call, allowed)
@@ -6463,6 +6594,7 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
     call: AgentToolCall,
     level: ToolPermissionLevel,
     signal?: AbortSignal,
+    round?: { path: string; baseVersion: string; approved?: boolean },
   ): Promise<boolean> {
     const id = randomUUID()
     // Durable tasks suspend their active budget while waiting. Their target-version
@@ -6549,11 +6681,12 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
         description: localizeWorkspaceAgentText(description, language),
         state: 'pending',
         expiresAt,
+        ...(round ? { round: { ...round } } : {}),
       },
     })
     return new Promise<boolean>((resolvePermission, rejectPermission) => {
       let settled = false
-      const finish = (allowed: boolean, expired = false) => {
+      const finish = (allowed: boolean, reason?: 'expired' | 'cancelled') => {
         if (settled) return
         settled = true
         const pending = runtime.pendingPermissions.get(id)
@@ -6573,11 +6706,12 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
               description: localizeWorkspaceAgentText(description, language),
               state: allowed ? 'allowed' : 'denied',
               expiresAt,
-              ...(expired ? { reason: 'expired' as const } : {}),
+              ...(reason ? { reason } : {}),
+              ...(round ? { round: { ...round } } : {}),
             },
           })
         }
-        if (expired)
+        if (reason === 'expired')
           rejectPermission(
             new Error(
               'Approval expired before authorization. Nothing was executed. Ask the user to retry the task for a new approval.',
@@ -6588,8 +6722,8 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
       const timer =
         expiresAt === undefined
           ? undefined
-          : setTimeout(() => finish(false, true), Math.max(0, expiresAt - Date.now()))
-      const abort = () => finish(false)
+          : setTimeout(() => finish(false, 'expired'), Math.max(0, expiresAt - Date.now()))
+      const abort = () => finish(false, 'cancelled')
       if (signal) signal.addEventListener('abort', abort, { once: true })
       runtime.pendingPermissions.set(id, {
         id,
@@ -6599,15 +6733,24 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
         description,
         expiresAt,
         resolve: finish,
-        expire: () => finish(false, true),
+        ...(round ? { approveRound: () => {
+          round.approved = true
+          finish(true)
+        } } : {}),
+        cancel: abort,
+        expire: () => finish(false, 'expired'),
         timer,
         ...(signal ? { removeAbort: () => signal.removeEventListener('abort', abort) } : {}),
       })
+      if (signal?.aborted) abort()
     })
   }
 
   private settlePermissions(runtime: RuntimeSession, allowed = false): void {
-    for (const pending of [...runtime.pendingPermissions.values()]) pending.resolve(allowed)
+    for (const pending of [...runtime.pendingPermissions.values()]) {
+      if (allowed) pending.resolve(true)
+      else pending.cancel()
+    }
   }
 
   /** Selecting automatic mode is explicit consent for currently waiting calls too. */
@@ -6628,8 +6771,10 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
       pending.expire()
       throw new Error('The permission request expired.')
     }
-    const allowed = decision === 'allow-once'
-    pending.resolve(allowed)
+    if (decision === 'allow-round') {
+      if (!pending.approveRound) throw new Error('This tool cannot use a round approval.')
+      pending.approveRound()
+    } else pending.resolve(decision === 'allow-once')
   }
 
   taskPermissions(sessionId: string, taskId: string) {
@@ -6662,6 +6807,17 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
   async undoRun(sessionId: string, runId: string): Promise<AgentRunReview> {
     const runtime = await this.runtimeFor(sessionId)
     if (runtime.running) throw new Error('Stop the current Agent run before undoing another run.')
+    if (runtime.reverting) throw new Error('Another round is already being reverted.')
+    runtime.reverting = true
+    try {
+      return await this.restoreRun(runtime, runId)
+    } finally {
+      runtime.reverting = false
+    }
+  }
+
+  private async restoreRun(runtime: RuntimeSession, runId: string): Promise<AgentRunReview> {
+    const sessionId = runtime.record.id
     const persisted = runtime.record.runs?.find((run) => run.review.id === runId)
     if (!persisted) throw new Error('The Agent run rollback record is unavailable.')
     if (persisted.review.state === 'undone') return persisted.review
@@ -6671,6 +6827,7 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
     let restoring = false
     let checkingPath: string | undefined, restoringPath: string | undefined
     const undoStates = new Map<string, NonNullable<AgentRunFileChange['undoState']>>()
+    const openedForReview = new Map<string, { head: TaskTargetVersion; adapter: LiveDocumentAdapter }>()
     try {
       // Validate every target before restoring any of them. This catches later
       // user edits and avoids a predictable half-rollback across documents.
@@ -6679,10 +6836,23 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
         const full = await runtime.workspace.resolvePath(checkpoint.path)
         if (checkpoint.operation === 'created') {
           if (this.options.isFileOpen?.(full) === true)
-            throw new Error(`Close ${checkpoint.path} before undoing its creation.`)
+            throw new RoundVersionConflict(`Close ${checkpoint.path} before undoing its creation.`)
           const bytes = new Uint8Array(await readFile(full))
           if (!checkpoint.afterDiskHash || bytesFingerprint(bytes) !== checkpoint.afterDiskHash)
-            throw new Error(`${checkpoint.path} changed after this Agent run.`)
+            throw new RoundVersionConflict(`${checkpoint.path} changed after this Agent run.`)
+          continue
+        }
+        if (!checkpoint.live && this.options.isFileOpen?.(full) === true) {
+          const adapter = checkpoint.type === 'docx'
+            ? await this.options.liveDocument?.(full, 'docx')
+            : undefined
+          const head = (await this.observeAssistantTarget(sessionId, checkpoint.path, runId)).version
+          if (!adapter?.review || !head.complete || !head.editorIdentity || head.dirty ||
+              !checkpoint.afterDiskHash || head.diskDigest !== checkpoint.afterDiskHash)
+            throw new RoundVersionConflict(`${checkpoint.path} has newer edits or needs to be closed before undo.`)
+          if (!checkpoint.beforeModelFile) throw new Error('The rollback snapshot is unavailable.')
+          await this.readCheckpoint(sessionId, persisted.review.id, checkpoint.beforeModelFile)
+          openedForReview.set(checkpoint.path, { head, adapter })
           continue
         }
         if (!checkpoint.beforeModelFile || !checkpoint.afterModelHash)
@@ -6693,7 +6863,7 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
             throw new Error(`Close/reopen rollback data is unavailable for ${checkpoint.path}.`)
           const diskHash = bytesFingerprint(new Uint8Array(await readFile(full)))
           if (diskHash !== checkpoint.afterDiskHash)
-            throw new Error(`${checkpoint.path} changed on disk after this Agent run.`)
+            throw new RoundVersionConflict(`${checkpoint.path} changed on disk after this Agent run.`)
           await this.readCheckpoint(
             runtime.record.id,
             persisted.review.id,
@@ -6704,7 +6874,7 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
         if (checkpoint.afterDiskHash) {
           const diskHash = bytesFingerprint(new Uint8Array(await readFile(full)))
           if (diskHash !== checkpoint.afterDiskHash)
-            throw new Error(`${checkpoint.path} changed on disk after this Agent run.`)
+            throw new RoundVersionConflict(`${checkpoint.path} changed on disk after this Agent run.`)
         }
         const document = await runtime.documents.open(checkpoint.path)
         const current = await document.snapshot()
@@ -6712,7 +6882,7 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
           new Uint8Array(Buffer.from(current.bytesBase64, 'base64')),
         )
         if (currentHash !== checkpoint.afterModelHash)
-          throw new Error(`${checkpoint.path} has newer document edits.`)
+          throw new RoundVersionConflict(`${checkpoint.path} has newer document edits.`)
         await this.readCheckpoint(
           runtime.record.id,
           persisted.review.id,
@@ -6726,7 +6896,12 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
         const full = await runtime.workspace.resolvePath(checkpoint.path)
         if (checkpoint.operation === 'created') {
           await runtime.documents.close(checkpoint.path)
-          await rm(full, { force: true })
+          await withDocumentOperationLock(full, async () => {
+            if (this.options.isFileOpen?.(full) === true ||
+                bytesFingerprint(await readFile(full)) !== checkpoint.afterDiskHash)
+              throw new RoundVersionConflict(`${checkpoint.path} changed before this round could be reverted.`)
+            await rm(full, { force: true })
+          })
           const remains = await lstat(full).catch((error) => {
             if (error?.code === 'ENOENT') return null
             throw error
@@ -6739,13 +6914,35 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
           })
           continue
         }
+        const usingDisk = checkpoint.live && this.options.isFileOpen?.(full) !== true
         const bytes = await this.readCheckpoint(
           runtime.record.id,
           persisted.review.id,
-          checkpoint.live && this.options.isFileOpen?.(full) !== true
+          usingDisk
             ? checkpoint.beforeDiskFile!
             : checkpoint.beforeModelFile!,
         )
+        const opened = openedForReview.get(checkpoint.path)
+        if (opened) {
+          await runtime.documents.close(checkpoint.path)
+          await withDocumentOperationLock(full, async () => {
+            const current = (await this.observeAssistantTarget(sessionId, checkpoint.path, runId)).version
+            if (current.dirty || current.editorIdentity !== opened.head.editorIdentity ||
+                !sameTaskTarget(opened.head, current))
+              throw new RoundVersionConflict(`${checkpoint.path} has newer document edits.`)
+            await writeAtomic(full, bytes)
+            const result = await opened.adapter.review?.({ kind: 'reload_round_after_revert', path: full })
+            if (bytesFingerprint(await readFile(full)) !== bytesFingerprint(bytes) ||
+                !result || typeof result !== 'object' || !('ok' in result) || result.ok !== true)
+              throw new Error(`The restored Word version could not be refreshed for ${checkpoint.path}.`)
+          })
+          undoStates.set(checkpoint.path, 'restored')
+          this.emit(runtime, {
+            type: 'file.modified',
+            file: { path: checkpoint.path, type: checkpoint.type, operation: 'modified' },
+          })
+          continue
+        }
         const document = await runtime.documents.open(checkpoint.path)
         if (!document.restoreAgentRun)
           throw new Error(`The editor cannot restore ${checkpoint.path}.`)
@@ -6758,6 +6955,10 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
           },
           checkpoint.rollbackToken,
           checkpoint.mutationCount,
+          {
+            modelHash: usingDisk ? checkpoint.afterDiskHash : checkpoint.afterModelHash,
+            diskHash: checkpoint.afterDiskHash,
+          },
         )
         const restored = await document.snapshot()
         if (
@@ -6781,6 +6982,7 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
         state: 'undone',
         undoable: false,
         undoneAt: nowIso(),
+        undoConflict: undefined,
         changes: persisted.review.changes.map((change) => ({
           ...change,
           undoable: false,
@@ -6790,14 +6992,15 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      const retryable = !restoring && error instanceof RoundVersionConflict
       persisted.review = {
         ...persisted.review,
         state: 'undo-failed',
-        undoable: false,
+        undoable: retryable,
         undoConflict: !restoring,
         changes: persisted.review.changes.map((change) => ({
           ...change,
-          undoable: false,
+          undoable: retryable,
           undoState:
             undoStates.get(change.path) ??
             (!restoring && change.path === checkingPath
@@ -7162,8 +7365,25 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
       }
       const level = permissionLevelForTool(call.name, configuredApprovalMode(this.options))
       if (!level) return
-      const allowed = await this.requestToolPermission(runtime, call, level, context.signal)
+      const active = runtime.activeAgentRun
+      const head = level === 'write' && requestedPath && ROUND_DOCUMENT_TOOLS.has(call.name)
+        ? await this.documentRoundHead(runtime, requestedPath)
+        : undefined
+      const key = head && pathIdentity(head.path)
+      const prior = key && active?.approvedDocuments.get(key)
+      if (prior && head && sameTaskTarget(prior, head)) return
+      if (prior && key) active?.approvedDocuments.delete(key)
+      const round = head?.diskDigest && !call.name.endsWith('.save')
+        ? { path: head.path, baseVersion: head.modelDigest ?? head.diskDigest, approved: false }
+        : undefined
+      const allowed = await this.requestToolPermission(runtime, call, level, context.signal, undefined, round)
       if (!allowed) return `The user denied permission for ${call.name}.`
+      if (round?.approved && head && key && active) {
+        const current = await this.documentRoundHead(runtime, requestedPath)
+        if (runtime.activeAgentRun !== active || !current || !sameTaskTarget(head, current))
+          return 'The document changed while approval was pending. Inspect it again before editing.'
+        active.approvedDocuments.set(key, current)
+      }
     })
     // Snapshot only after path/permission guards have passed. Opening a live
     // editor transaction while a confirmation card is still pending would
@@ -8172,6 +8392,10 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
   private async startRun(runtime: RuntimeSession, message: AgentInput): Promise<void> {
     const text = String(message.text ?? '').trim()
     if (!text || runtime.deleted || runtime.running) return
+    if (runtime.reverting) {
+      this.emit(runtime, { type: 'error', error: 'Wait for the current round rollback to finish.' })
+      return
+    }
     // Reserve synchronously, before event-log hydration or reference I/O can
     // yield; concurrent send() calls must not both enter the same session.
     runtime.running = true
@@ -8188,6 +8412,7 @@ export class WorkspaceAgentRuntime implements WorkspaceAgentRuntimePort {
       id: runtime.activeRunId,
       startedAt: nowIso(),
       checkpoints: new Map(),
+      approvedDocuments: new Map(),
     }
     runtime.turnNumber = 0
     runtime.stepNumber = 0

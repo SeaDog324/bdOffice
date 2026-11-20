@@ -68,6 +68,7 @@ export {
   missingRequiredFields,
   runtimePreamble,
   sanitizeAgentPayload,
+  withoutCompactionPreamble,
 } from './loop'
 export type {
   AgentLoopEvents,

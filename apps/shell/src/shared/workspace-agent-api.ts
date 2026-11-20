@@ -147,7 +147,7 @@ export interface AgentPlanStep {
 }
 
 export type ToolPermissionLevel = 'write' | 'destructive' | 'shell'
-export type ToolPermissionDecision = 'allow-once' | 'deny'
+export type ToolPermissionDecision = 'allow-once' | 'allow-round' | 'deny'
 /** Auto executes all registry-approved tools; per-action asks before every mutation or command. */
 export type AgentApprovalMode = 'auto' | 'per-action'
 
@@ -281,7 +281,8 @@ export interface WorkspaceAgentEvent {
     description: string
     state: 'pending' | 'allowed' | 'denied'
     expiresAt?: number
-    reason?: 'expired'
+    reason?: 'expired' | 'cancelled'
+    round?: { path: string; baseVersion: string; approved?: boolean }
   }
   status?: 'idle' | 'running' | 'cancelled' | 'error' | 'completed' | 'waiting_user'
   error?: string
@@ -377,6 +378,7 @@ export interface WorkspaceAgentApi {
     decision: ToolPermissionDecision,
   ): Promise<void>
   undoRun(sessionId: string, runId: string): Promise<AgentRunReview>
+  openWordReview?(sessionId: string, runId: string, path: string): Promise<void>
   listRunReviews(sessionId: string, cursor?: string): Promise<RunReviewPage>
   subscribe(sessionId: string, handler: (event: WorkspaceAgentEvent) => void): () => void
   subscribeFiles?(
@@ -387,6 +389,7 @@ export interface WorkspaceAgentApi {
 
 export const WORKSPACE_AGENT_CHANNELS = {
   runReviews: 'workspace-agent:run-reviews',
+  openWordReview: 'workspace-agent:open-word-review',
   prepareContext: 'workspace-agent:prepare-context',
   clearDocumentContext: 'workspace-agent:clear-document-context',
   contextSelection: 'workspace-agent:context-selection',

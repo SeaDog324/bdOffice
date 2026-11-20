@@ -138,7 +138,6 @@ export {
 export { CROP_EDGE_LABELS } from './strings-crop-edges'
 export { ImageViewer, type ImageViewerLabels } from './image-viewer'
 export { trapTab, useModalKeys } from './modal-keys'
-export { confirmApprovalMode } from './approval-mode-confirm'
 export {
   removeBackground,
   sampleBackgroundColors,

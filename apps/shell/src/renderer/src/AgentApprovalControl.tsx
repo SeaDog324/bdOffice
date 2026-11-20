@@ -1,15 +1,12 @@
-import { useRef } from 'react'
-import { confirmApprovalMode } from '@genoffice/ui'
+import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AgentApprovalMode } from '../../shared/workspace-agent-api'
 import type { WorkspaceChatCopy } from './workspace-chat-strings'
 
-/** The mode is persisted by main only after the modal confirmation succeeds. */
 export function AgentApprovalControl({
   mode,
   ready,
   saving,
-  zh,
   onChange,
   copy,
   loadError,
@@ -19,7 +16,6 @@ export function AgentApprovalControl({
   mode: AgentApprovalMode
   ready: boolean
   saving: boolean
-  zh: boolean
   onChange: (mode: AgentApprovalMode) => Promise<void>
   copy: WorkspaceChatCopy
   loadError?: string
@@ -27,14 +23,15 @@ export function AgentApprovalControl({
   actions?: ReactNode
 }) {
   const busy = useRef(false)
+  const [saveError, setSaveError] = useState('')
   const apply = async (next: AgentApprovalMode) => {
     if (busy.current || saving || !ready || next === mode) return
     busy.current = true
+    setSaveError('')
     try {
-      if (!confirmApprovalMode(next, zh)) return
       await onChange(next)
     } catch (cause) {
-      window.alert(cause instanceof Error ? cause.message : copy.agentFailed)
+      setSaveError(cause instanceof Error ? cause.message : copy.agentFailed)
     } finally {
       busy.current = false
     }
@@ -53,7 +50,6 @@ export function AgentApprovalControl({
             type="button"
             aria-pressed={ready && mode === 'per-action'}
             disabled={!ready || saving}
-            aria-haspopup="dialog"
             onClick={() => void apply('per-action')}
           >
             {copy.approvalPerAction}
@@ -62,7 +58,6 @@ export function AgentApprovalControl({
             type="button"
             aria-pressed={ready && mode === 'auto'}
             disabled={!ready || saving}
-            aria-haspopup="dialog"
             onClick={() => void apply('auto')}
           >
             {copy.approvalAuto}
@@ -70,10 +65,10 @@ export function AgentApprovalControl({
         </div>
         {actions}
       </div>
-      {loadError && (
+      {(loadError || saveError) && (
         <div className="workspace-chat-approval-notice" role="alert">
-          {loadError}
-          {onRetry && (
+          {loadError || saveError}
+          {loadError && onRetry && (
             <button type="button" className="workspace-chat-small-btn" onClick={onRetry}>
               {copy.retry}
             </button>

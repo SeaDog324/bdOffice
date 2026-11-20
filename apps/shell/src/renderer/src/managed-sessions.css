@@ -183,31 +183,6 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
-.memory-content {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 1.7;
-  width: 100%;
-}
-.outcome-memory {
-  width: 100%;
-  display: grid;
-  gap: 10px;
-}
-.outcome-memory article {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px;
-  display: grid;
-  gap: 6px;
-}
-.outcome-memory-change {
-  border-left: 2px solid var(--border);
-  padding-left: 8px;
-}
-.outcome-memory-change p {
-  white-space: pre-wrap;
-}
 @media (max-width: 460px) {
   .managed-session-body {
     grid-template-columns: 1fr;

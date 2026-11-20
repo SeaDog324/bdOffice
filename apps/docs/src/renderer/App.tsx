@@ -117,6 +117,9 @@ import {
 } from './mail-merge/output'
 import { ZoteroDocumentController } from './zotero/controller'
 import { AiPanel, aiRevisionAuthor } from './ai/AiPanel'
+import type { WordRoundReview } from '../shared/agent-round-review'
+import { restoreAgentRound } from './editor/restore-agent-round'
+import type { PmNode } from './editor/convert'
 import type { AiCommentsAccess, AiDocExtras, AiHeaderFooterAccess } from './ai/tools'
 import type { AiStyleInfo } from './ai/style-ops'
 import { applyResolvedPageSetup, describeSection, type AiPageSetupAccess } from './ai/page-setup'
@@ -1174,6 +1177,7 @@ export function App() {
   const [compareResult, setCompareResult] = useState<{
     otherName: string
     entries: CompareEntry[]
+    round?: WordRoundReview
   } | null>(null)
   const [autoSave, setAutoSave] = useAutoSavePref('aidocs.autoSave', window.desktop)
   // tab closed but this renderer kept alive (shell freeze workaround): go inert
@@ -2806,6 +2810,9 @@ export function App() {
             return { ok: false, changed: 0, description: 'No matching document blocks.' }
         }
         const target = blockIndexes.length > 0 ? { blockIndexes } : undefined
+        const revision = editor.storage.trackChanges?.enabled
+          ? { track: { author: aiRevisionAuthor() } }
+          : undefined
         if (kind === 'format' && target) {
           const commands: AiCommand[] = []
           if (command.headingLevel !== undefined)
@@ -2821,7 +2828,7 @@ export function App() {
                 fields: Object.keys(style) as (keyof typeof style)[],
               },
             })
-          const result = executeCommands(editor, { commands })
+          const result = executeCommands(editor, { commands }, revision)
           const changed = result.results.reduce((sum, item) => sum + item.changed, 0)
           if (changed > 0) dirtyRef.current = true
           return { ok: result.ok, changed, description: result.error ?? result.summary }
@@ -2837,7 +2844,7 @@ export function App() {
               },
             },
           ],
-        })
+        }, revision)
         if (!outcome.ok)
           return { ok: false, changed: 0, description: outcome.error ?? 'The edit failed.' }
         const changed = outcome.results.reduce((total, result) => total + result.changed, 0)
@@ -2848,8 +2855,43 @@ export function App() {
           description: changed > 0 ? outcome.summary : 'No matching document text.',
         }
       },
-      review: (command: Record<string, unknown>) => {
+      review: async (command: Record<string, unknown>) => {
         const kind = typeof command.kind === 'string' ? command.kind : ''
+        const expectedPath = typeof command.path === 'string' ? command.path.replaceAll('\\', '/') : ''
+        const loaded = fileCtxRef.current.doc
+        const matches = !!expectedPath && loaded?.filePath?.replaceAll('\\', '/') === expectedPath
+        if (kind === 'show_round_review') {
+          if (!matches) return { ok: false, loading: true }
+          const round = command.data as WordRoundReview | undefined
+          if (
+            !round || typeof round.runId !== 'string' ||
+            !Number.isFinite(Date.parse(round.completedAt)) ||
+            !Array.isArray(round.changes) || round.changes.length > 100
+          ) return { ok: false, error: 'Invalid Word revision record.' }
+          const entries: CompareEntry[] = round.changes.map((change) => ({
+            kind: change.before === undefined && change.after !== undefined ? 'added'
+              : change.before !== undefined && change.after === undefined ? 'removed' : 'changed',
+            left: change.before,
+            right: change.after,
+            location: change.location,
+          }))
+          setCompareResult({ otherName: '', entries, round })
+          return { ok: true }
+        }
+        if (kind === 'reload_round_after_revert') {
+          if (!matches || !loaded?.filePath || dirtyRef.current)
+            return { ok: false, error: 'The Word editor has newer edits.' }
+          const head = editor.state.doc
+          const mayReplace = () =>
+            fileCtxRef.current.doc === loaded && !dirtyRef.current && editor.state.doc.eq(head)
+          const result = await window.desktop.openDocxPath(loaded.filePath)
+          if (!result || 'needsPassword' in result || !mayReplace())
+            return { ok: false, error: 'The reverted Word version could not be loaded.' }
+          const outcome = await loadFileImpl(fileCtxRef.current, result, mayReplace)
+          if (outcome !== 'ok') return { ok: false, error: 'The reverted Word version could not be loaded.' }
+          setCompareResult(null)
+          return { ok: true }
+        }
         const context = reviewCtxRef.current
         if (kind === 'read_comments') return context.comments.slice(0, 500)
         if (kind === 'reply_comment') {
@@ -2889,10 +2931,12 @@ export function App() {
         dirtyRef.current = true
         return changed
       },
-      restoreAgentRun: (snapshot: unknown) => {
+      restoreAgentRun: (snapshot: unknown, expected?: unknown) => {
         if (!snapshot || typeof snapshot !== 'object')
           return { ok: false, error: 'The Workspace Agent snapshot is invalid.' }
-        editor.commands.setContent(snapshot as never)
+        const head = expected === undefined ? undefined : editor.schema.nodeFromJSON(expected)
+        if (!restoreAgentRound(editor, snapshot as PmNode, head))
+          return { ok: false, error: 'The Word document has newer edits or is read-only.' }
         dirtyRef.current = true
         return { ok: true }
       },
@@ -9081,6 +9125,7 @@ export function App() {
               <ComparePanel
                 otherName={compareResult.otherName}
                 entries={compareResult.entries}
+                round={compareResult.round}
                 onClose={() => setCompareResult(null)}
               />
             )}

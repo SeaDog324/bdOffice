@@ -984,7 +984,7 @@ const workspaceAgentApi: WorkspaceAgentApi = {
   },
   async resolvePermission(sessionId, requestId, decision) {
     if (!sessionId || !requestId) throw new Error('Invalid permission request.')
-    if (decision !== 'allow-once' && decision !== 'deny')
+    if (decision !== 'allow-once' && decision !== 'allow-round' && decision !== 'deny')
       throw new Error('Invalid permission decision.')
     await ipcRenderer.invoke(
       WORKSPACE_AGENT_CHANNELS.resolvePermission,
@@ -1000,6 +1000,9 @@ const workspaceAgentApi: WorkspaceAgentApi = {
   async undoRun(sessionId, runId) {
     if (!sessionId || !runId) throw new Error('Invalid Agent run rollback request.')
     return ipcRenderer.invoke(WORKSPACE_AGENT_CHANNELS.undoRun, sessionId, runId)
+  },
+  async openWordReview(sessionId, runId, path) {
+    await ipcRenderer.invoke(WORKSPACE_AGENT_CHANNELS.openWordReview, sessionId, runId, path)
   },
   subscribe(sessionId, handler) {
     let disposed = false

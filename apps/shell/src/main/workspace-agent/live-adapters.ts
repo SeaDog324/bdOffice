@@ -484,6 +484,10 @@ class DocsLiveAdapter implements LiveDocumentAdapter {
     return (await bridgeCall<WorkspaceEditorContext>(this.webContents, 'getContext')) ?? {}
   }
 
+  async taskDirty(): Promise<boolean> {
+    return bridgeCall(this.webContents, 'taskDirty')
+  }
+
   private async blocks(): Promise<
     Array<{ id: string; index: number; text: string; type: string }>
   > {
@@ -588,9 +592,15 @@ class DocsLiveAdapter implements LiveDocumentAdapter {
     await this.undo()
   }
 
-  async restoreAgentRun(snapshot: DocumentSnapshot): Promise<void> {
+  async restoreAgentRun(
+    snapshot: DocumentSnapshot,
+    _token?: unknown,
+    _mutationCount?: number,
+    expected?: DocumentSnapshot,
+  ): Promise<void> {
     const restored = await bridgeCall<unknown>(this.webContents, 'restoreAgentRun', [
       snapshotJson(snapshot),
+      ...(expected ? [snapshotJson(expected)] : []),
     ])
     if (restored !== true && (!isRecord(restored) || restored.ok !== true))
       throw new Error('The Docs rollback snapshot could not be restored.')

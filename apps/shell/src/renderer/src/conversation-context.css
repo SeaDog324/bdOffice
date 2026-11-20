@@ -1,0 +1,411 @@
+.ai-bigdog-chat .workspace-chat-main {
+  position: relative;
+  anchor-scope: --chat-context-trigger;
+}
+
+.workspace-chat-context-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 9px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.workspace-chat-context-trigger {
+  anchor-name: --chat-context-trigger;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.workspace-chat-context-trigger:hover,
+.workspace-chat-context-trigger[aria-expanded='true'] {
+  border-color: var(--border-hover);
+  background: var(--surface-subtle);
+}
+
+.workspace-chat-context-trigger [data-file-count] {
+  padding-inline-start: 7px;
+  border-inline-start: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.workspace-chat-context-trigger > svg {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.workspace-chat-context-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+}
+
+.workspace-chat-context-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+
+.workspace-chat-context-status[data-enabled='true']::before {
+  background: var(--success);
+}
+
+.workspace-chat-context-layer {
+  position: absolute;
+  z-index: 10;
+  position-anchor: --chat-context-trigger;
+  inset: 8px 12px calc(anchor(top, 56px) + 8px) anchor(left, 12px);
+  display: flex;
+  align-items: end;
+  pointer-events: none;
+}
+
+.conversation-context {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 470px);
+  max-height: min(100%, 480px);
+  min-width: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-menu);
+  font-size: 13px;
+  overflow: hidden;
+  pointer-events: auto;
+  animation: conversation-context-enter 130ms ease-out;
+}
+
+@keyframes conversation-context-enter {
+  from {
+    opacity: 0.65;
+    translate: 0 4px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-context {
+    animation: none;
+  }
+}
+
+.conversation-context-head,
+.context-section-head,
+.conversation-context-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.conversation-context-head,
+.conversation-context-footer {
+  flex: none;
+  padding: 8px 14px;
+}
+
+.conversation-context-head {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.conversation-context h2,
+.conversation-context h3,
+.conversation-context h4,
+.conversation-context p {
+  margin: 0;
+}
+
+.conversation-context h2 {
+  font-size: 15px;
+  outline: none;
+}
+
+.conversation-context h3 {
+  font-size: 13px;
+}
+
+.conversation-context h4 {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.conversation-context-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.conversation-context button {
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 4px 7px;
+  min-width: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.conversation-context button:not(:disabled):hover {
+  background: var(--hover);
+}
+
+.conversation-context :is(button, input):disabled,
+.workspace-chat-context-trigger:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.conversation-context :is(button, input, summary):focus-visible,
+.workspace-chat-context-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.conversation-context .context-icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+}
+
+.context-section-head h3 span {
+  margin-inline-start: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.conversation-context .context-add-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.context-add-button > span {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.conversation-context .context-empty-files {
+  margin-top: 7px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.context-empty-files,
+.context-hint,
+.context-memory-toggle small {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.context-file-list {
+  padding: 0;
+  margin: 4px 0 0;
+  list-style: none;
+}
+
+.context-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.context-file:last-child {
+  border-bottom: 0;
+}
+
+.context-file > :first-child {
+  flex: none;
+}
+
+.context-file-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.context-file-copy .context-file-name,
+.context-source-row > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+}
+
+.context-file-error,
+.context-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.context-file-error {
+  padding-inline-start: 7px;
+}
+
+.context-memory-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--surface-subtle);
+  cursor: pointer;
+}
+
+.context-memory-toggle span {
+  display: grid;
+  gap: 2px;
+}
+
+.context-memory-toggle input {
+  appearance: none;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.context-memory-toggle input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.context-memory-toggle input::before {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform var(--transition-fast);
+}
+
+.context-memory-toggle input:checked::before {
+  transform: translateX(14px);
+}
+
+.context-memory-sources summary {
+  padding: 4px 2px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.context-memory-sources > summary small {
+  margin-inline-start: 7px;
+  color: var(--text-muted);
+}
+
+.context-source-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+  padding: 7px 3px 1px 12px;
+  border-inline-start: 1px solid var(--border);
+}
+
+.context-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.context-source-row > span {
+  min-width: 0;
+}
+
+.context-source-row button {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.context-source-options input[type='search'] {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.context-source-candidates {
+  max-height: 145px;
+  padding-block-start: 4px;
+  overflow-y: auto;
+}
+
+.context-source-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 4px 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.context-source-options input[type='checkbox'] {
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.conversation-context-footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.conversation-context-footer button {
+  font-size: 12px;
+  font-weight: 600;
+}

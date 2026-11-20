@@ -121,18 +121,20 @@ export class DeepSeekHarnessAdapter implements HarnessAgentAdapter {
   }
 
   private settings(): AiSettings {
-    try {
-      return resolveAiSettings(this.options.readAiSettings?.() ?? {}, defaultAiSettings())
-    } catch {
-      return defaultAiSettings()
-    }
+    return resolveAiSettings(this.options.readAiSettings?.() ?? {}, defaultAiSettings())
   }
 
   private createDeepSeekTransport(): AgentTransport {
     return {
       stream: (request, callbacks) => {
         const controller = new AbortController()
-        const settings = this.settings()
+        let settings: AiSettings
+        try {
+          settings = this.settings()
+        } catch (error) {
+          queueMicrotask(() => callbacks.onError(error instanceof Error ? error.message : String(error)))
+          return { cancel: () => controller.abort() }
+        }
         const provider = activeProvider(settings)
         const config = settings.providers[provider]
         if (!config?.apiKey) {

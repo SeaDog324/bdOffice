@@ -93,3 +93,15 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.workspace-chat-run-head > .run-evidence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.run-evidence-version {
+  display: block;
+  color: var(--text-secondary);
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}

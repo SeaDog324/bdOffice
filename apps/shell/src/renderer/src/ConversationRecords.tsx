@@ -11,6 +11,7 @@ export function ConversationRecords({
   undoingRunId,
   onUndo,
   onOpen,
+  onWordReview,
 }: {
   lang: string
   sessionId: string | null
@@ -18,6 +19,7 @@ export function ConversationRecords({
   undoingRunId: string | null
   onUndo(runId: string): void
   onOpen(path: string, artifactId?: string): void
+  onWordReview?(runId: string, path: string): void
 }) {
   const zh = /^zh/i.test(lang),
     titleId = useId()
@@ -140,6 +142,10 @@ export function ConversationRecords({
                     revision={revision}
                     undoingRunId={undoingRunId}
                     onUndo={onUndo}
+                    onWordReview={onWordReview && ((runId, path) => {
+                      close()
+                      onWordReview(runId, path)
+                    })}
                     onOpen={(path, artifactId) => {
                       close()
                       onOpen(path, artifactId)

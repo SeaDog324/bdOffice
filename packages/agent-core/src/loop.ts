@@ -543,6 +543,19 @@ const COMPACT_SUMMARY_PREFIX = '[Summary of earlier conversation'
 const COMPACT_SUMMARY_HEADER = '[Summary of earlier conversation (auto-compacted)]'
 const COMPACT_SUMMARY_ACK = 'Understood, continuing from the progress so far.'
 
+/** The model-only pair precedes restored history and is absent from live conversation events. */
+export function withoutCompactionPreamble<T extends AgentMessage>(messages: readonly T[]): readonly T[] {
+  const [summary, acknowledgement] = messages
+  if (
+    summary?.role === 'user' &&
+    summary.text.startsWith(COMPACT_SUMMARY_HEADER + '\n') &&
+    acknowledgement?.role === 'assistant' &&
+    acknowledgement.text === COMPACT_SUMMARY_ACK &&
+    !acknowledgement.toolCalls?.length
+  ) return messages.slice(2)
+  return messages
+}
+
 /** Approximate UTF-8 byte count (ASCII 1 byte, CJK etc. 3; surrogate pairs count as 6 — slight overestimate is harmless) */
 function utf8Size(s: string): number {
   let n = 0

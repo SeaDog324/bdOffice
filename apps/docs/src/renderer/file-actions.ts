@@ -469,6 +469,7 @@ let openGeneration = 0
 export async function loadFile(
   ctx: FileActionContext,
   result: OpenDocxResult,
+  mayReplace?: () => boolean,
 ): Promise<LoadFileOutcome> {
   if (!result || !ctx.editor) return 'canceled'
   if ('needsPassword' in result) {
@@ -484,7 +485,7 @@ export async function loadFile(
       bytes.byteLength === 0 ? await blankDocxBytes() : bytes,
       { owned: true },
     )
-    if (generation !== openGeneration) return 'superseded'
+    if (generation !== openGeneration || mayReplace?.() === false) return 'superseded'
     const tier = openTierFor(docWeight(parsed.blocks))
     if (tier === 'refuse') {
       const msg = t('appDocTooLargeBlocks', {
@@ -504,7 +505,7 @@ export async function loadFile(
     setDocFontTable(parsed.fontTable)
     await prefetchFaces(collectDocFonts(parsed))
     await loadBundledStandIns(collectDocFonts(parsed))
-    if (generation !== openGeneration) return 'superseded'
+    if (generation !== openGeneration || mayReplace?.() === false) return 'superseded'
     ctx.editor.storage.listNumbering.styles = parsed.styles
     ctx.editor.storage.listNumbering.docDefaults = parsed.docDefaults
     ctx.editor.storage.listNumbering.defs = parsed.numbering

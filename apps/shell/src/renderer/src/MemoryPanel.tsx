@@ -5,7 +5,10 @@ import { OutcomeMemoryList } from './OutcomeMemoryList'
 import { DogIllustration } from './DogIllustration'
 import { stripMemoryContextEcho } from '@genoffice/project-store/browser'
 import { SessionMutationDraft, sessionMutationError } from './session-mutations'
+import { FileBadge } from './file-badge'
+import chatIcon from './assets/chat-icon.svg'
 import './managed-sessions.css'
+import './memory-panel.css'
 
 export function readableMemory(view: SessionView, zh: boolean): string {
   if (view.session.summary.mode === 'manual') return view.markdown
@@ -16,10 +19,10 @@ function readableGeneratedMemory(markdown: string, zh: boolean): string {
   // The generated note also stores recovery metadata, which belongs in advanced management.
   return stripMemoryContextEcho(markdown)
     .split('## Budget')[0]!
-    .split(/(?=## )/)
+    .split(/(?=^## )/m)
     .slice(1)
+    .filter((section) => !section.startsWith('## Earlier context'))
     .join('')
-    .replace('## Earlier context', zh ? '之前的内容' : 'Earlier context')
     .replace('## Recent requests', zh ? '你提出的需求' : 'Your requests')
     .replace('## Unfinished request', zh ? '尚未完成的需求' : 'Unfinished request')
     .replace(
@@ -31,10 +34,12 @@ function readableGeneratedMemory(markdown: string, zh: boolean): string {
 
 export function MemoryPanel({
   lang,
+  currentSessionId,
   onClose,
   onAdvanced,
 }: {
   lang: string
+  currentSessionId?: string | null
   onClose(): void
   onAdvanced(): void
 }) {
@@ -42,7 +47,8 @@ export function MemoryPanel({
   const zh = /^zh/i.test(lang)
   const t = (cn: string, en: string) => (zh ? cn : en)
   const [sessions, setSessions] = useState<ManagedSessionMeta[]>([])
-  const [selected, setSelected] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [selected, setSelected] = useState<string | null>(currentSessionId ?? null)
   const [view, setView] = useState<SessionView | null>(null)
   const [query, setQuery] = useState('')
   const [matches, setMatches] = useState<Set<string> | null>(null)
@@ -56,14 +62,25 @@ export function MemoryPanel({
   const selectedRevision = sessions.find((item) => item.id === selected)?.revision
   const request = useRef(0)
   const lock = useRef(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const detail = useRef<HTMLDivElement>(null)
   const cancelRefresh = useCallback(() => {
     request.current++
   }, [])
   const refresh = useCallback(async () => {
     const sequence = ++request.current
     const all = await api.list()
-    if (sequence === request.current) setSessions(all.filter((m) => m.purpose !== 'maintenance'))
+    if (sequence !== request.current) return
+    const visible = all.filter((m) => m.purpose !== 'maintenance')
+    setSessions(visible)
+    setLoaded(true)
+    setSelected((current) =>
+      visible.some((item) => item.id === current) ? current : (visible[0]?.id ?? null),
+    )
   }, [api])
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true })
+  }, [])
   useEffect(() => {
     const update = () => {
       void refresh().catch((e) => setError(String(e)))
@@ -105,6 +122,7 @@ export function MemoryPanel({
     setView(null)
     setEditing(false)
     setNotice('')
+    if (detail.current) detail.current.scrollTop = 0
   }, [selected])
   useEffect(() => {
     if (editing) return
@@ -137,207 +155,276 @@ export function MemoryPanel({
       setBusy(false)
     }
   }
-  const meta = sessions.find((m) => m.id === selected)
-  const visible = matches ? sessions.filter((m) => matches.has(m.id)) : sessions
+  const visible = query.trim() && matches ? sessions.filter((m) => matches.has(m.id)) : sessions
+  const meta = visible.find((item) => item.id === selected)
+  const currentView = view?.session.meta.id === meta?.id ? view : null
+  const memory = currentView ? readableMemory(currentView, zh) : ''
+  const memoryPreview = memory
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*(?:#{1,6}\s+|[-*+]\s+|>\s*)/, '').trim())
+    .filter(Boolean)
+    .join(' ')
   const title = (m: ManagedSessionMeta) =>
     /^(New session|New conversation|新会话|新对话)$/i.test(m.title)
       ? t('未命名对话', 'Untitled conversation')
       : m.title
   return (
-    <section className="managed-sessions memory-panel" aria-label={t('记忆管理', 'Memory')}>
-      <header>
-        <div>
-          <strong>{t('大狗记住了什么', 'What BigDog remembers')}</strong>
-          <small>
-            {t(
-              '相关记忆会自动用于对话，无需整理或选择。你可以随时修改，或停止自动引用。',
-              'Relevant memories are used automatically. Edit them or stop using them whenever you need.',
-            )}
-          </small>
+    <section
+      className="managed-sessions memory-panel"
+      aria-label={t('记忆管理', 'Memory')}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || event.nativeEvent.isComposing || editing || busy) return
+        event.stopPropagation()
+        onClose()
+      }}
+    >
+      <header className="memory-panel-head">
+        <h2 ref={heading} tabIndex={-1}>
+          {t('大狗记住了什么', 'What BigDog remembers')}
+        </h2>
+        <div className="memory-panel-head-actions">
+          <button type="button" disabled={editing || busy} onClick={onAdvanced}>
+            {t('高级管理', 'Advanced management')}
+          </button>
+          <button
+            type="button"
+            className="memory-panel-close"
+            onClick={onClose}
+            aria-label={t('关闭记忆', 'Close memory')}
+          >
+            ×
+          </button>
         </div>
-        <button onClick={onClose} aria-label={t('关闭记忆', 'Close memory')}>
-          ×
-        </button>
       </header>
-      <div className="managed-session-toolbar">
-        <input
-          aria-label={t('搜索记忆', 'Search memory')}
-          placeholder={t('搜索记住的内容', 'Search remembered content')}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <button onClick={onAdvanced}>{t('高级管理', 'Advanced management')}</button>
-      </div>
       {error && (
         <p role="alert" className="managed-session-error">
           {error}
         </p>
       )}
-      {notice && <p role="status">{notice}</p>}
-      <div className="managed-session-body" aria-busy={busy || searching}>
-        <nav aria-label={t('记忆来源', 'Memory sources')}>
-          {!visible.length && !searching && (
-            <div className="managed-session-empty">
-              {!error && (
-                <div className="managed-session-empty-illustration">
-                  <DogIllustration scene="memory" />
-                </div>
-              )}
-              <p>
-                {query
-                  ? t(
-                      '没有匹配的记忆，试试其他关键词。',
-                      'No matching memories. Try another search.',
-                    )
-                  : t(
-                      '还没有相关记忆。正常对话后，大狗会自动保存。',
-                      'No memories yet. BigDog saves them as you chat.',
-                    )}
+      {notice && (
+        <p className="memory-notice" role="status">
+          {notice}
+        </p>
+      )}
+      <div className="memory-browser">
+        <div className="memory-browser-sidebar">
+          <input
+            type="search"
+            aria-label={t('搜索记忆', 'Search memory')}
+            placeholder={t('搜索记忆', 'Search memory')}
+            value={query}
+            disabled={busy || editing}
+            onChange={(event) => {
+              setError('')
+              setQuery(event.currentTarget.value)
+            }}
+          />
+          <nav
+            className="memory-results"
+            aria-label={t('记忆来源', 'Memory sources')}
+            aria-busy={!loaded || searching}
+          >
+            {!error && (!loaded || searching) && (
+              <p className="memory-list-status" role="status">
+                {searching ? t('正在搜索…', 'Searching…') : t('正在读取记忆…', 'Loading memories…')}
               </p>
-            </div>
-          )}
-          {visible.map((m) => (
-            <button
-              key={m.id}
-              disabled={busy || editing}
-              className={m.id === selected ? 'selected' : ''}
-              onClick={() => setSelected(m.id)}
-            >
-              <strong>{title(m)}</strong>
-              <small>
-                {m.memoryDisabled
-                  ? t('已停止自动引用', 'Not used automatically')
-                  : t('可自动引用', 'Used when relevant')}
-              </small>
-              <small>
-                {m.source?.filePath?.split(/[\\/]/).pop() ?? t('来自对话', 'From a conversation')}
-              </small>
-            </button>
-          ))}
-        </nav>
-        <div className="managed-session-detail">
-          {!view || !meta ? (
-            <p>
-              {t(
-                '选择一条记忆，查看内容和来源。',
-                'Choose a memory to see its content and source.',
-              )}
-            </p>
-          ) : (
+            )}
+            {!error && loaded && !visible.length && !searching && (
+              <p className="memory-list-status">
+                {query.trim()
+                  ? t('没有匹配的记忆', 'No matching memories')
+                  : t('还没有记忆', 'No memories yet')}
+              </p>
+            )}
+            {visible.map((item) => {
+              const source = item.source?.filePath?.split(/[\\/]/).pop()
+              const rowTitle = title(item)
+              const sourceLabel = source
+                ? source === rowTitle
+                  ? t('文件对话', 'File conversation')
+                  : source
+                : item.id === currentSessionId
+                  ? t('当前对话', 'Current conversation')
+                  : t('对话', 'Conversation')
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={busy || editing}
+                  aria-current={item.id === selected ? 'true' : undefined}
+                  title={rowTitle}
+                  onClick={() => setSelected(item.id)}
+                >
+                  {source ? (
+                    <FileBadge ext={source.split('.').pop()?.toLowerCase() ?? ''} size={25} />
+                  ) : (
+                    <img src={chatIcon} alt="" width={25} height={25} />
+                  )}
+                  <span className="memory-result-copy">
+                    <strong>{rowTitle}</strong>
+                    <small>
+                      {sourceLabel}
+                      {item.memoryDisabled && t(' · 已暂停引用', ' · Paused')}
+                    </small>
+                  </span>
+                </button>
+              )
+            })}
+          </nav>
+        </div>
+        <div className="memory-detail" ref={detail} aria-busy={busy}>
+          {meta && currentView ? (
             <>
-              <strong>{title(meta)}</strong>
-              <small>
-                {t('来源：', 'Source: ')}
-                {meta.source?.filePath ?? t('AI 大狗对话', 'AI BigDog conversation')}
-              </small>
-              <small>
-                {t(
-                  '对话记录不代表文件已修改；实际成果请查看任务结果。',
-                  'Conversation notes are not proof of file changes. See task results for verified outcomes.',
-                )}
-              </small>
+              <div className="memory-detail-head">
+                <h3 title={title(meta)}>{title(meta)}</h3>
+                <div className="memory-detail-meta">
+                  <small title={meta.source?.filePath}>
+                    {meta.source?.filePath?.split(/[\\/]/).pop() ??
+                      t('来自 AI 大狗对话', 'From an AI BigDog conversation')}
+                  </small>
+                  <span className="memory-use-state" data-enabled={!meta.memoryDisabled}>
+                    {meta.memoryDisabled
+                      ? t('已暂停引用', 'Use paused')
+                      : t('可自动引用', 'Available for automatic use')}
+                  </span>
+                </div>
+              </div>
               {editing ? (
                 <>
-                  <label className="managed-session-memory">
+                  <label className="memory-editor">
                     {t('修改记忆', 'Edit memory')}
                     <textarea
                       aria-label={t('修改记忆内容', 'Edit memory content')}
+                      autoFocus
                       value={text}
                       onChange={(e) => setText(e.target.value)}
                     />
                   </label>
                   <div className="managed-session-actions">
                     <button
+                      type="button"
+                      className="memory-save-button"
                       disabled={busy}
                       onClick={() =>
                         void run(async () => {
-                          await mutation.current.apply(api, view, {
+                          await mutation.current.apply(api, currentView, {
                             kind: 'update_memory',
                             markdown: text,
                           })
                           setView(await api.get(meta.id))
                           setEditing(false)
-                          setNotice(
-                            t(
-                              '记忆已保存，后续对话会保留你的修改。',
-                              'Memory saved. Future conversations will preserve your edits.',
-                            ),
-                          )
+                          setNotice(t('记忆已保存。', 'Memory saved.'))
                         })
                       }
                     >
                       {t('保存记忆', 'Save memory')}
                     </button>
-                    <button disabled={busy} onClick={() => setEditing(false)}>
+                    <button type="button" disabled={busy} onClick={() => setEditing(false)}>
                       {t('取消', 'Cancel')}
                     </button>
                   </div>
                 </>
               ) : (
                 <>
-                  <OutcomeMemoryList entries={view.session.memory?.outcomes ?? []} lang={lang} />
-                  <div className="memory-content">
-                    <WorkspaceMarkdown
-                      allowImages={false}
-                      value={
-                        readableMemory(view, zh) ||
-                        t(
-                          '这段对话尚未记录具体内容。',
-                          'No conversation content has been recorded yet.',
-                        )
-                      }
-                    />
-                  </div>
-                  {view.session.summary.mode === 'manual' &&
-                  view.session.context.messages.length > 0 &&
-                  view.session.memory?.automaticEntries.length ? (
-                    <>
-                      <strong>{t('后续对话补充', 'Additional conversation notes')}</strong>
-                      <WorkspaceMarkdown
-                        allowImages={false}
-                        value={view.session.memory.automaticEntries
-                          .map((entry) => readableGeneratedMemory(entry.markdown, zh))
-                          .join('\n\n')}
-                      />
-                    </>
-                  ) : null}
                   <div className="managed-session-actions">
                     <button
+                      type="button"
                       disabled={busy}
                       onClick={() => {
-                        setText(readableMemory(view, zh))
+                        setText(memory)
                         setEditing(true)
                       }}
                     >
-                      {t('修改', 'Edit')}
+                      {t('修改记忆', 'Edit memory')}
                     </button>
                     <button
+                      type="button"
                       disabled={busy}
                       onClick={() =>
                         void run(async () => {
-                          await mutation.current.apply(api, view, {
+                          await mutation.current.apply(api, currentView, {
                             kind: 'set_memory_enabled',
                             enabled: meta.memoryDisabled === true,
                           })
+                          setView(await api.get(meta.id))
                           setNotice(
                             meta.memoryDisabled
-                              ? t('已恢复自动引用。', 'Automatic use restored.')
+                              ? t('已恢复引用。', 'Memory use restored.')
                               : t(
-                                  '已停止自动引用。对话和原文仍保留，可随时恢复。',
-                                  'No longer used automatically. The conversation and note are retained and can be restored.',
+                                  '已暂停引用，可随时恢复。',
+                                  'Memory use paused. You can restore it at any time.',
                                 ),
                           )
                         })
                       }
                     >
                       {meta.memoryDisabled
-                        ? t('恢复自动引用', 'Restore automatic use')
-                        : t('忘记（不再自动引用）', 'Forget (stop automatic use)')}
+                        ? t('恢复引用', 'Restore use')
+                        : t('暂停引用', 'Pause use')}
                     </button>
                   </div>
+                  <details className="memory-content" key={meta.id}>
+                    <summary>
+                      <strong>
+                        {currentView.session.summary.mode === 'manual'
+                          ? t('人工备注', 'Manual note')
+                          : t('对话摘要', 'Conversation notes')}
+                      </strong>
+                      <span className="memory-preview">
+                        {memoryPreview || t('还没有对话摘要', 'No conversation notes yet')}
+                      </span>
+                    </summary>
+                    <WorkspaceMarkdown
+                      allowImages={false}
+                      value={
+                        memory ||
+                        t(
+                          '这段对话尚未记录具体内容。',
+                          'No conversation content has been recorded yet.',
+                        )
+                      }
+                    />
+                  </details>
+                  {currentView.session.summary.mode === 'manual' &&
+                  currentView.session.context.messages.length > 0 &&
+                  currentView.session.memory?.automaticEntries.length ? (
+                    <details className="memory-content">
+                      <summary>
+                        <strong>{t('后续对话补充', 'Additional conversation notes')}</strong>
+                      </summary>
+                      <WorkspaceMarkdown
+                        allowImages={false}
+                        value={currentView.session.memory.automaticEntries
+                          .map((entry) => readableGeneratedMemory(entry.markdown, zh))
+                          .join('\n\n')}
+                      />
+                    </details>
+                  ) : null}
+                  <OutcomeMemoryList
+                    entries={currentView.session.memory?.outcomes ?? []}
+                    lang={lang}
+                  />
                 </>
               )}
             </>
+          ) : (
+            <div className="memory-detail-empty">
+              {loaded && !sessions.length && !error && (
+                <div className="managed-session-empty-illustration">
+                  <DogIllustration scene="memory" />
+                </div>
+              )}
+              {!error &&
+                (meta
+                  ? t('正在读取记忆…', 'Loading memory…')
+                  : !loaded
+                    ? null
+                    : !sessions.length
+                      ? t('聊过的内容会自动保存到这里。', 'BigDog saves memories as you chat.')
+                      : visible.length > 0
+                        ? t('选择一条记忆查看内容。', 'Select a memory to see its content.')
+                        : null)}
+            </div>
           )}
         </div>
       </div>

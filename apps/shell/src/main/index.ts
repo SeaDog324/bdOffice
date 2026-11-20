@@ -6980,9 +6980,18 @@ function registerWorkspaceAgentIpc(): void {
       guard(event)
       if (typeof sessionId !== 'string' || typeof requestId !== 'string')
         throw new Error('Invalid permission request.')
-      if (decision !== 'allow-once' && decision !== 'deny')
+      if (decision !== 'allow-once' && decision !== 'allow-round' && decision !== 'deny')
         throw new Error('Invalid permission decision.')
       return runtime().resolvePermission(sessionId, requestId, decision)
+    },
+  )
+  ipcMain.handle(
+    WORKSPACE_AGENT_CHANNELS.openWordReview,
+    (event, sessionId: unknown, runId: unknown, path: unknown) => {
+      guard(event)
+      if (typeof sessionId !== 'string' || typeof runId !== 'string' || typeof path !== 'string')
+        throw new Error('Invalid Word revision request.')
+      return runtime().openWordReview(sessionId, runId, path)
     },
   )
   ipcMain.handle(

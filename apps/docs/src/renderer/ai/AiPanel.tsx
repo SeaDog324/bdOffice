@@ -47,7 +47,7 @@ import {
   truncateCardName,
 } from '@genoffice/ui'
 import type { PmNode } from '../editor/convert'
-import { TABLE_TRAILING_SKIP } from '../editor/extensions'
+import { restoreAgentRound } from '../editor/restore-agent-round'
 import { countWords, findNumId, type NumIds } from './protocol'
 import { DOC_NAV_SCHEME, navigateToBlock, parseDocNavHref } from './doc-nav'
 import {
@@ -185,7 +185,8 @@ interface ChatEntry {
    * the persisted transcript keeps the tool call, so a reopened file can regenerate) */
   mindmap?: MindMapTreeNode
   /** document state before this turn's first edit — rendered as an inline roll-back action */
-  snapshot?: PmNode
+  snapshot?: { base: PmNode; head: Editor['state']['doc'] }
+  rollbackConflict?: boolean
   /** attachments consumed from the composer by this user message (read-only echo chips) */
   attachments?: AttachmentMeta[]
   /** skills the user attached to this message from the composer menu */
@@ -900,6 +901,8 @@ export function AiPanel({
           patchLastAssistant({ usage: runUsageRef.current })
         },
         onDone: ({ text, cancelled, turnLimit, truncated }) => {
+          const base = runSnapshotRef.current
+          const snapshot = base ? { base, head: editorRef.current.state.doc } : undefined
           // module-level t: the loop instance is created only once; the component's t goes stale with the first-render closure
           const baseText = turnLimit
             ? [text, tModule('aiTurnLimit')].filter(Boolean).join('\n\n')
@@ -913,7 +916,7 @@ export function AiPanel({
             text: finalText || (last.tools?.length ? last.text : tModule('aiNoReply')),
             // A stop mid-tool can leave a running placeholder behind — drop it
             tools: last.tools?.filter((tl) => !tl.running),
-            snapshot: runSnapshotRef.current ?? undefined,
+            snapshot,
           }))
           setBusy(false)
           // App listens: a run that generated content into a never-saved document
@@ -926,6 +929,8 @@ export function AiPanel({
           }
         },
         onError: (error) => {
+          const base = runSnapshotRef.current
+          const snapshot = base ? { base, head: editorRef.current.state.doc } : undefined
           setChat((prev) => {
             const next = [...prev]
             const last = next.at(-1)
@@ -935,7 +940,7 @@ export function AiPanel({
                 streaming: false,
                 error,
                 tools: last.tools?.filter((tl) => !tl.running),
-                snapshot: runSnapshotRef.current ?? undefined,
+                snapshot,
               }
             }
             return boundChatHistory(next)
@@ -1378,17 +1383,13 @@ export function AiPanel({
     onTrackChangesToggle?.()
   }
 
-  const rollback = (entryIdx: number, snapshot: PmNode) => {
-    editor
-      .chain()
-      .setMeta(TABLE_TRAILING_SKIP, true)
-      .setContent(snapshot as never)
-      .run()
-    // The document rewound to before this turn, so this and every later
-    // rollback point now describe discarded futures
-    setChat((prev) =>
-      prev.map((e, i) => (i >= entryIdx && e.snapshot ? { ...e, snapshot: undefined } : e)),
-    )
+  const rollback = (entryIdx: number, snapshot: NonNullable<ChatEntry['snapshot']>) => {
+    const restored = restoreAgentRound(editor, snapshot.base, snapshot.head)
+    setChat((prev) => prev.map((entry, index) =>
+      index === entryIdx
+        ? { ...entry, rollbackConflict: !restored, ...(restored ? { snapshot: undefined } : {}) }
+        : entry,
+    ))
   }
 
   const resizeCleanupRef = useRef<(() => void) | null>(null)
@@ -1703,6 +1704,13 @@ export function AiPanel({
                     </>
                   )}
                 </div>
+              )}
+              {entry.rollbackConflict && (
+                <small role="status">
+                  {lang.startsWith('zh')
+                    ? '当前文档版本有更新，无法直接回退这轮修改。'
+                    : 'The document version changed. This round cannot be reverted directly.'}
+                </small>
               )}
               {entry.turnLimit && isLast && !busy && (
                 <button className="ai-continue-btn" onClick={continueRun}>

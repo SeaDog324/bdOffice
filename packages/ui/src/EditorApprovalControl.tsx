@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { confirmApprovalMode } from './approval-mode-confirm'
 
 type Mode = 'auto' | 'per-action'
 
@@ -63,7 +62,6 @@ export function EditorApprovalControl({ zh }: { zh: boolean }) {
     busy.current = true
     const version = revision.current
     try {
-      if (!confirmApprovalMode(next, zh)) return
       setSaving(true)
       setError('')
       const actual = await window.editorApproval.setMode(next)
@@ -75,10 +73,8 @@ export function EditorApprovalControl({ zh }: { zh: boolean }) {
       }
     } catch {
       if (mounted.current)
-        window.alert(
-          zh
-            ? '保存失败，仍使用原审批方式。请重试。'
-            : 'Could not save; the previous policy remains active. Please retry.',
+        setError(
+          zh ? '审批方式保存失败，请重试。' : 'Could not save the approval mode. Try again.',
         )
     } finally {
       busy.current = false
@@ -99,7 +95,6 @@ export function EditorApprovalControl({ zh }: { zh: boolean }) {
             type="button"
             disabled={!ready || saving}
             aria-pressed={ready && mode === 'per-action'}
-            aria-haspopup="dialog"
             onClick={() => void apply('per-action')}
           >
             {zh ? '每次审批' : 'Ask each time'}
@@ -108,7 +103,6 @@ export function EditorApprovalControl({ zh }: { zh: boolean }) {
             type="button"
             disabled={!ready || saving}
             aria-pressed={ready && mode === 'auto'}
-            aria-haspopup="dialog"
             onClick={() => void apply('auto')}
           >
             {zh ? '自动执行' : 'Auto execute'}

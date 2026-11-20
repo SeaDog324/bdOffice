@@ -282,10 +282,30 @@ interface Props {
   undoDisabled?: boolean
   onUndo(runId: string): void
   onOpen?(path: string, artifactId?: string): void
+  onWordReview?(runId: string, path: string): void
+  compact?: boolean
 }
-export function RunReviewCard({ run, lang, undoing, undoDisabled, onUndo, onOpen }: Props) {
+export function RunReviewCard({
+  run,
+  lang,
+  undoing,
+  undoDisabled,
+  onUndo,
+  onOpen,
+  onWordReview,
+  compact,
+}: Props) {
   const copy = labels(lang),
     chat = workspaceChatCopy(lang)
+  const [expanded, setExpanded] = useState(false)
+  const zh = isChineseWorkspaceLanguage(lang)
+  const showDetails = !compact || expanded
+  const word = run.changes.length === 1 ? run.changes[0] : undefined
+  const showSaveSummary = compact && !expanded && run.state === 'completed' && !!run.changes.length
+  const allSaved = run.changes.every((change) => change.evidence?.saveState === 'saved')
+  const allVerified = run.changes.every((change) => change.evidence?.verification === 'passed')
+  const canReviewWord = (change: AgentRunReview['changes'][number]) =>
+    !run.historical && change.type === 'docx' && change.operation !== 'deleted' && !!change.evidence
   const changed = run.changes.filter(
     (change) => !change.evidence || change.evidence.effect === 'changed',
   ).length
@@ -317,14 +337,29 @@ export function RunReviewCard({ run, lang, undoing, undoDisabled, onUndo, onOpen
           <span title={run.changes.map((change) => change.path).join(', ')}>
             {run.changes.map((change) => change.path.split(/[\\/]/).pop()).join(', ')}
           </span>
+          {showSaveSummary && (
+            <small>{[allSaved ? copy.saved : copy.save_unknown, allVerified ? (zh ? '已核验' : 'Verified') : copy.unverified].join(' · ')}</small>
+          )}
         </div>
-        <button
-          type="button"
-          disabled={!run.undoable || undoDisabled || undoing}
-          onClick={() => onUndo(run.id)}
-        >
-          {undoing ? chat.undoing : chat.undoRun}
-        </button>
+        <div className="run-evidence-actions">
+          {compact && word && onWordReview && canReviewWord(word) && (
+            <button type="button" onClick={() => onWordReview(run.id, word.path)}>
+              {zh ? '审阅修订' : 'Review revisions'}
+            </button>
+          )}
+          {compact && (
+            <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+              {expanded ? (zh ? '收起详情' : 'Hide details') : zh ? '查看详情' : 'View details'}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!run.undoable || undoDisabled || undoing}
+            onClick={() => onUndo(run.id)}
+          >
+            {undoing ? chat.undoing : chat.undoRun}
+          </button>
+        </div>
       </div>
       {run.undoConflict && <p className="run-evidence-issue">{copy.conflictHelp}</p>}
       {run.historical && (
@@ -335,54 +370,75 @@ export function RunReviewCard({ run, lang, undoing, undoDisabled, onUndo, onOpen
         </p>
       )}
       {run.evidenceStored === false && <p className="run-evidence-issue">{copy.notStored}</p>}
-      <div className="workspace-chat-run-files">
-        {run.changes.map((change) => (
-          <div className="workspace-chat-run-file" key={change.path}>
-            <div>
-              <span className="workspace-chat-run-operation">
-                {change.evidence?.effect === 'unchanged'
-                  ? change.operation === 'created'
-                    ? copy.notCreated
-                    : copy.noChange
-                  : change.operation === 'created' && change.evidence?.effect === 'unknown'
-                    ? copy.creationUnknown
-                    : chat.operation(change.operation)}
-              </span>
-              <strong title={change.path}>{change.path.split(/[\\/]/).pop()}</strong>
-              {onOpen &&
-                (!run.historical || change.artifactId) &&
-                change.operation !== 'deleted' &&
-                change.evidence?.saveState === 'saved' && (
+      {showDetails && (
+        <div className="workspace-chat-run-files">
+          {run.changes.map((change) => (
+            <div className="workspace-chat-run-file" key={change.path}>
+              <div>
+                <span className="workspace-chat-run-operation">
+                  {change.evidence?.effect === 'unchanged'
+                    ? change.operation === 'created'
+                      ? copy.notCreated
+                      : copy.noChange
+                    : change.operation === 'created' && change.evidence?.effect === 'unknown'
+                      ? copy.creationUnknown
+                      : chat.operation(change.operation)}
+                </span>
+                <strong title={change.path}>{change.path.split(/[\\/]/).pop()}</strong>
+                {onWordReview && canReviewWord(change) && (!compact || !word) && (
                   <button
                     type="button"
                     className="run-evidence-open"
-                    onClick={() => onOpen(change.path, change.artifactId)}
+                    onClick={() => onWordReview(run.id, change.path)}
                   >
-                    {copy.openFile}
+                    {zh ? '审阅修订' : 'Review revisions'}
                   </button>
                 )}
+                {onOpen &&
+                  (!run.historical || change.artifactId) &&
+                  change.operation !== 'deleted' &&
+                  change.evidence?.saveState === 'saved' && (
+                    <button
+                      type="button"
+                      className="run-evidence-open"
+                      onClick={() => onOpen(change.path, change.artifactId)}
+                    >
+                      {copy.openFile}
+                    </button>
+                  )}
+              </div>
+              {change.undoState && (
+                <p className="run-evidence-undo-state" data-undo-state={change.undoState}>
+                  {copy.undoStates[change.undoState]}
+                </p>
+              )}
+              {change.evidence?.beforeVersion && change.evidence.afterVersion && (
+                <small
+                  className="run-evidence-version"
+                  title={change.evidence.beforeVersion + ' → ' + change.evidence.afterVersion}
+                >
+                  {zh ? '基线' : 'Base'} <code>{change.evidence.beforeVersion.slice(0, 12)}</code>
+                  {' → '}
+                  {zh ? '结果' : 'Result'} <code>{change.evidence.afterVersion.slice(0, 12)}</code>
+                </small>
+              )}
+              {change.evidence ? (
+                <Evidence value={change.evidence} lang={lang} historical={run.historical} />
+              ) : (
+                <p>{copy.legacy}</p>
+              )}
+              {change.summaries.length > 0 && (
+                <details>
+                  <summary>{copy.advanced}</summary>
+                  {change.summaries.map((summary) => (
+                    <p key={summary}>{summary}</p>
+                  ))}
+                </details>
+              )}
             </div>
-            {change.undoState && (
-              <p className="run-evidence-undo-state" data-undo-state={change.undoState}>
-                {copy.undoStates[change.undoState]}
-              </p>
-            )}
-            {change.evidence ? (
-              <Evidence value={change.evidence} lang={lang} historical={run.historical} />
-            ) : (
-              <p>{copy.legacy}</p>
-            )}
-            {change.summaries.length > 0 && (
-              <details>
-                <summary>{copy.advanced}</summary>
-                {change.summaries.map((summary) => (
-                  <p key={summary}>{summary}</p>
-                ))}
-              </details>
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       {run.error && !run.undoConflict && (
         <div className="workspace-chat-run-error">{run.error}</div>
       )}
@@ -398,6 +454,7 @@ export function RunEvidenceHistory({
   undoingRunId,
   revision,
   onOpen,
+  onWordReview,
   expanded,
 }: {
   sessionId: string
@@ -406,6 +463,7 @@ export function RunEvidenceHistory({
   undoingRunId: string | null
   revision: string
   onOpen?(path: string, artifactId?: string): void
+  onWordReview?(runId: string, path: string): void
   expanded?: boolean
 }) {
   const copy = labels(lang),
@@ -480,6 +538,7 @@ export function RunEvidenceHistory({
           lang={lang}
           onUndo={onUndo}
           onOpen={onOpen}
+          onWordReview={onWordReview}
           undoing={undoingRunId === run.id}
           undoDisabled={undoingRunId !== null}
         />

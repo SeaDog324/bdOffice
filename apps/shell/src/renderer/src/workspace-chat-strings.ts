@@ -19,8 +19,6 @@ export interface WorkspaceChatCopy {
   approvalMode: string
   approvalAuto: string
   approvalPerAction: string
-  approvalAutoConfirm: string
-  approvalEnableAuto: string
   approvalAutoApplied: string
   approvalPerActionApplied: string
   approvalLoading: string
@@ -73,6 +71,9 @@ export interface WorkspaceChatCopy {
   deny: string
   allowOnce: string
   allowedOnce: string
+  allowRound: string
+  allowedRound: string
+  roundApprovalScope: string
   denied: string
   expired: string
   agentRunUndone: string
@@ -82,6 +83,10 @@ export interface WorkspaceChatCopy {
   undoRun: string
   reviewChanges: string
   toolRunning: string
+  workStopped: string
+  workingSteps(count: number): string
+  finishedSteps(count: number): string
+  incompleteSteps(count: number, incomplete: number): string
   toolResult(index: number): string
   askPlaceholder: string
   messageAria: string
@@ -114,9 +119,6 @@ const EN: WorkspaceChatCopy = {
   approvalMode: 'Tool approval mode',
   approvalAuto: 'Auto execute',
   approvalPerAction: 'Approve each',
-  approvalAutoConfirm:
-    'Applies to all assistants and releases pending approvals. Edits and commands will run without asking each time. Some actions cannot be undone. System security limits still apply.',
-  approvalEnableAuto: 'Enable auto execute',
   approvalAutoApplied: 'Auto execute enabled. You can switch back at any time.',
   approvalPerActionApplied:
     'Approval required for subsequent protected actions. Running commands are not stopped.',
@@ -171,6 +173,9 @@ const EN: WorkspaceChatCopy = {
   deny: 'Deny',
   allowOnce: 'Allow once',
   allowedOnce: 'Allowed once',
+  allowRound: 'Allow this file for the round',
+  allowedRound: 'Approved for this round',
+  roundApprovalScope: 'Edits and save for this file in this round. Base version',
   denied: 'Denied',
   expired: 'Expired',
   agentRunUndone: 'Agent run undone',
@@ -180,6 +185,10 @@ const EN: WorkspaceChatCopy = {
   undoRun: 'Undo run',
   reviewChanges: 'Review changes',
   toolRunning: 'Running',
+  workStopped: 'Interrupted',
+  workingSteps: (count) => 'Working · ' + count + ' steps',
+  finishedSteps: (count) => 'Worked · ' + count + ' steps',
+  incompleteSteps: (count, incomplete) => count + ' steps · ' + incomplete + ' incomplete',
   toolResult: (index) => `Tool result ${index}`,
   askPlaceholder: 'Ask, create a document, or continue with files and memory...',
   messageAria: 'Message AI BigDog',
@@ -222,9 +231,6 @@ const ZH: WorkspaceChatCopy = {
   approvalMode: '工具批准方式',
   approvalAuto: '自动执行',
   approvalPerAction: '每次审批',
-  approvalAutoConfirm:
-    '对所有助手生效，并放行当前等待审批的操作。修改和命令将自动执行，部分操作无法撤销。系统安全限制仍然有效。',
-  approvalEnableAuto: '确认启用自动执行',
   approvalAutoApplied: '已启用自动执行，可随时切回每次审批。',
   approvalPerActionApplied: '后续受保护操作将逐次审批，已运行的命令不会被中止。',
   approvalLoading: '正在等待已保存的审批设置…',
@@ -278,15 +284,22 @@ const ZH: WorkspaceChatCopy = {
   deny: '拒绝',
   allowOnce: '仅允许本次',
   allowedOnce: '已允许本次',
+  allowRound: '允许本轮编辑并保存',
+  allowedRound: '已批准本轮',
+  roundApprovalScope: '本轮可编辑并保存这份文件，基线版本',
   denied: '已拒绝',
   expired: '已过期',
   agentRunUndone: 'Agent 操作已撤销',
   agentRunRollbackAttention: 'Agent 操作回滚需要处理',
   updatedFiles: (count) => `已更新 ${count} 个文件`,
   undoing: '正在撤销…',
-  undoRun: '撤销操作',
+  undoRun: '回退本轮',
   reviewChanges: '查看变更',
   toolRunning: '运行中',
+  workStopped: '已中止',
+  workingSteps: (count) => '正在处理 · ' + count + ' 步',
+  finishedSteps: (count) => '已处理 · ' + count + ' 步',
+  incompleteSteps: (count, incomplete) => count + ' 步 · ' + incomplete + ' 步未完成',
   toolResult: (index) => `工具结果 ${index}`,
   askPlaceholder:
     '\u63d0\u95ee\u3001\u521b\u5efa\u6587\u6863\uff0c\u6216\u7ed3\u5408\u6587\u4ef6\u4e0e\u8bb0\u5fc6\u7ee7\u7eed\u5de5\u4f5c...',

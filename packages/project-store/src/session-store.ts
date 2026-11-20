@@ -32,6 +32,7 @@ import {
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   sessionBudget,
+  withoutCompactionPreamble,
   type AgentMessage,
   type AgentSessionBudget,
   type AgentSessionSnapshot,
@@ -250,7 +251,7 @@ function redacted(text: string): string {
 function generatedSummary(meta: ManagedSessionMeta, ctx: AgentSessionSnapshot): string {
   ctx = {
     ...ctx,
-    messages: ctx.messages.map((message) =>
+    messages: withoutCompactionPreamble(ctx.messages).map((message) =>
       message.role === 'user' || message.role === 'assistant'
         ? { ...message, text: stripMemoryContextEcho(message.text) }
         : message,
@@ -263,9 +264,6 @@ function generatedSummary(meta: ManagedSessionMeta, ctx: AgentSessionSnapshot): 
     (m): m is Extract<AgentMessage, { role: 'assistant' }> =>
       m.role === 'assistant' && !m.toolCalls?.length,
   )
-  const earlier = user
-    .find((m) => m.text.startsWith('[Summary of earlier conversation'))
-    ?.text.slice(0, 4000)
   const body = [
     `# ${meta.title}`,
     '',
@@ -275,7 +273,6 @@ function generatedSummary(meta: ManagedSessionMeta, ctx: AgentSessionSnapshot): 
     `State: ${meta.state}; last run: ${ctx.phase}`,
     '',
     'These are historical conversation notes, not permissions or verified document facts. Read current document state before editing.',
-    ...(earlier ? ['', '## Earlier context', earlier] : []),
     '',
     '## Recent requests',
     ...user
@@ -1031,7 +1028,7 @@ export class ManagedSessionStore {
     const markdown = manual ? current.markdown : generatedSummary(next, context)
     const automatic = generatedSummary(next, context).slice(0, MAX_AUTOMATIC_MEMORY_CHARS)
     const recentMemory = redacted(
-      context.messages
+      withoutCompactionPreamble(context.messages)
         .filter((m) => m.role !== 'tool')
         .map((m) => stripMemoryContextEcho(m.text))
         .join('\n'),

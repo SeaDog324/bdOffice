@@ -1,13 +1,16 @@
 import { withAttachedSkills } from '@genoffice/agent-core'
+import type { SessionContextSelection } from '@genoffice/project-store'
 import { ConversationContextPanel } from './ConversationContextPanel'
 import { RunReviewCard } from './RunReviewCard'
 import { ConversationRecords } from './ConversationRecords'
+import { WorkspaceToolSteps } from './WorkspaceToolSteps'
 import {
   AiModelPicker,
   AiUsageChip,
   AiSkillsMenu,
   AiSkillChips,
   useDismissablePopover,
+  useEscapeToClose,
   type AiModelPickerBridge,
 } from '@genoffice/ui'
 import type { AgentContextPreview } from '../../shared/workspace-agent-api'
@@ -28,6 +31,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import type {
   AgentApprovalMode,
   AgentSessionSummary,
+  ToolPermissionDecision,
   WorkspaceAgentEvent,
   WorkspaceAgentContext,
   WorkspaceAgentReference,
@@ -39,6 +43,7 @@ import type { Lang } from '@genoffice/i18n'
 import {
   emptyTimelineState,
   replayTimelineEvents,
+  timelineForDisplay,
   reduceTimelineEvent,
   timelineStateFromHistory,
 } from './workspace-chat-timeline'
@@ -59,14 +64,10 @@ import { useI18n } from './locale'
 import {
   isChineseWorkspaceLanguage,
   workspaceChatCopy,
-  workspaceDisplayTitle,
   workspaceErrorText,
   workspacePermissionText,
   workspaceSessionTitle,
   workspaceToolLabel,
-  workspaceToolDisplayText,
-  workspaceToolOutput,
-  workspaceToolSummary,
 } from './workspace-chat-strings'
 interface WorkspaceChatSize {
   width: number
@@ -139,10 +140,6 @@ export function workspaceFileLabel(entry: ChatReferenceFile): string {
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
-}
-
-function safeDisplayUrl(value: string): string | null {
-  return /^(?:https?:|data:image\/(?:png|jpeg|webp);base64,)/i.test(value) ? value : null
 }
 
 interface MentionCandidate {
@@ -521,6 +518,13 @@ export function WorkspaceChat({
   const [advancedSessions, setAdvancedSessions] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
   const [contextPreview, setContextPreview] = useState<AgentContextPreview | null>(null)
+  const [contextLoadingError, setContextLoadingError] = useState<string | null>(null)
+  const [contextSaving, setContextSaving] = useState(false)
+  const contextPanelId = useId()
+  const contextTriggerRef = useRef<HTMLButtonElement>(null)
+  const contextLayerRef = useRef<HTMLDivElement>(null)
+  const memoryOpenerRef = useRef<HTMLButtonElement | null>(null)
+  const zh = isChineseWorkspaceLanguage(lang)
   const modelBridge = useMemo<AiModelPickerBridge>(
     () => ({
       getSettings: () => window.aiOffice.aiGetSettings(),
@@ -536,19 +540,26 @@ export function WorkspaceChat({
   const activeSessionRef = useRef(activeSessionId)
   activeSessionRef.current = activeSessionId
   const [attachingFiles, setAttachingFiles] = useState(false)
-  const attachFilesLock = useRef(false)
+  const contextMutationLock = useRef(false)
   const referenceLoadVersion = useRef(0)
-  const [referenceSelection, setReferenceSelection] = useState<{
+  const [contextSelection, setContextSelection] = useState<{
     sessionId: string
-    paths: string[]
+    value: SessionContextSelection
   } | null>(null)
+  const selectedContext =
+    contextSelection?.sessionId === activeSessionId ? contextSelection.value : null
   const referenceFiles = useMemo(
-    () =>
-      sessionReferenceFiles(
-        referenceSelection?.sessionId === activeSessionId ? referenceSelection.paths : [],
-      ),
-    [referenceSelection, activeSessionId],
+    () => sessionReferenceFiles(selectedContext?.filePaths ?? []),
+    [selectedContext?.filePaths],
   )
+  const closeContext = () => {
+    setContextOpen(false)
+    contextTriggerRef.current?.focus({ preventScroll: true })
+  }
+  useEscapeToClose(contextOpen, closeContext)
+  useDismissablePopover(contextOpen, () => setContextOpen(false), {
+    inside: () => [contextTriggerRef.current, contextLayerRef.current],
+  })
   const mentionFiles = useMemo(
     () => mergeReferenceFiles(files, referenceFiles, workspace?.root),
     [files, referenceFiles, workspace?.root],
@@ -997,15 +1008,19 @@ export function WorkspaceChat({
     let alive = true
     const version = ++referenceLoadVersion.current
     setContextPreview(null)
+    setContextLoadingError(null)
     if (activeSessionId)
       void workspaceAgentApi()
         .getContextSelection(activeSessionId)
         .then((selection) => {
           if (alive && version === referenceLoadVersion.current)
-            setReferenceSelection({ sessionId: activeSessionId, paths: selection.filePaths })
+            setContextSelection({ sessionId: activeSessionId, value: selection })
         })
-        .catch(() => {})
-    if (activeSessionId && workspaceAgentApi().previewContext)
+        .catch((cause) => {
+          if (alive && version === referenceLoadVersion.current)
+            setContextLoadingError(displayError(cause))
+        })
+    if (contextOpen && activeSessionId && workspaceAgentApi().previewContext)
       void workspaceAgentApi()
         .previewContext(activeSessionId)
         .then((p) => {
@@ -1015,7 +1030,7 @@ export function WorkspaceChat({
     return () => {
       alive = false
     }
-  }, [activeSessionId, sessionManagerOpen])
+  }, [activeSessionId, contextOpen, sessionManagerOpen, displayError])
   const ensureCurrentSession = async () => {
     if (activeSessionRef.current) return activeSessionRef.current
     const epoch = sendEpoch.current
@@ -1032,25 +1047,42 @@ export function WorkspaceChat({
       api = workspaceAgentApi()
     if (current === id) return
     const selected = await api.getContextSelection(current)
-    await api.setContextSelection(current, {
+    const next = {
       ...selected,
       sessionIds: [...new Set([...selected.sessionIds, id])],
-    })
-    const preview = await api.previewContext(current)
-    if (activeSessionRef.current === current) setContextPreview(preview)
+      excludedSessionIds: selected.excludedSessionIds?.filter((source) => source !== id),
+    }
+    await api.setContextSelection(current, next)
+    if (activeSessionRef.current === current)
+      setContextSelection({ sessionId: current, value: next })
   }
   const showContext = async () => {
+    if (contextOpen) {
+      setContextOpen(false)
+      return
+    }
     try {
       await ensureCurrentSession()
+      setMentionRange(null)
       setContextOpen(true)
     } catch (cause) {
       setError(displayError(cause))
     }
   }
+  const openMemoryManager = (opener: HTMLButtonElement | null) => {
+    memoryOpenerRef.current = opener
+    setContextOpen(false)
+    setAdvancedSessions(false)
+    setSessionManagerOpen(true)
+  }
+  const closeMemoryManager = () => {
+    setSessionManagerOpen(false)
+    requestAnimationFrame(() => memoryOpenerRef.current?.focus({ preventScroll: true }))
+  }
   const attachFiles = async (files: File[]) => {
-    if (running || attachFilesLock.current || !files.length) return
+    if (running || contextMutationLock.current || !files.length) return
     const epoch = sendEpoch.current
-    attachFilesLock.current = true
+    contextMutationLock.current = true
     setAttachingFiles(true)
     try {
       setError(null)
@@ -1107,9 +1139,10 @@ export function WorkspaceChat({
         ),
       )
       if (epoch === sendEpoch.current && activeSessionRef.current === id) {
-        const version = ++referenceLoadVersion.current
+        ++referenceLoadVersion.current
         refreshDraft((revision) => revision + 1)
-        setReferenceSelection({ sessionId: id, paths: selection.filePaths })
+        setContextSelection({ sessionId: id, value: selection })
+        setContextLoadingError(null)
         if (selection.addedPaths) {
           const keys = new Set(
             selection.addedPaths.map((entry) => referencePathKey(entry.path, workspace?.root)),
@@ -1121,17 +1154,6 @@ export function WorkspaceChat({
         }
         setContextOpen(false)
         setMentionRange(null)
-        void api
-          .previewContext(id)
-          .then((preview) => {
-            if (
-              epoch === sendEpoch.current &&
-              activeSessionRef.current === id &&
-              version === referenceLoadVersion.current
-            )
-              setContextPreview(preview)
-          })
-          .catch(() => {})
         requestAnimationFrame(() => {
           if (activeSessionRef.current !== id) return
           inputRef.current?.focus()
@@ -1142,54 +1164,67 @@ export function WorkspaceChat({
     } catch (cause) {
       if (epoch === sendEpoch.current) setError(displayError(cause))
     } finally {
-      attachFilesLock.current = false
+      contextMutationLock.current = false
       setAttachingFiles(false)
     }
   }
 
-  const removeReference = async (path: string) => {
+  const updateContextSelection = async (
+    update: (selection: SessionContextSelection) => SessionContextSelection,
+    removedFile?: string,
+  ) => {
     const id = activeSessionId,
       epoch = sendEpoch.current
-    if (!id || running || attachFilesLock.current) return
-    attachFilesLock.current = true
-    setAttachingFiles(true)
+    if (!id || running || contextMutationLock.current) return
+    contextMutationLock.current = true
+    setContextSaving(true)
     try {
       const api = workspaceAgentApi(),
         selection = await api.getContextSelection(id)
-      const next = { ...selection, filePaths: selection.filePaths.filter((file) => file !== path) }
+      if (activeSessionRef.current !== id || epoch !== sendEpoch.current) return
+      const next = update(selection)
       await api.setContextSelection(id, next)
-      drafts.write(
-        id,
-        removeFileMention(
-          drafts.read(id),
-          path,
-          mentionCandidates(mentionFiles, agentContext, lang),
-        ),
-      )
+      if (removedFile)
+        drafts.write(
+          id,
+          removeFileMention(
+            drafts.read(id),
+            removedFile,
+            mentionCandidates(mentionFiles, agentContext, lang),
+          ),
+        )
       if (activeSessionRef.current !== id || epoch !== sendEpoch.current) return
       const version = ++referenceLoadVersion.current
-      setReferenceSelection({ sessionId: id, paths: next.filePaths })
-      refreshDraft((revision) => revision + 1)
+      setContextSelection({ sessionId: id, value: next })
+      if (removedFile) refreshDraft((revision) => revision + 1)
+      setContextLoadingError(null)
       setError(null)
-      void api
-        .previewContext(id)
-        .then((preview) => {
-          if (
-            activeSessionRef.current === id &&
-            epoch === sendEpoch.current &&
-            version === referenceLoadVersion.current
-          )
-            setContextPreview(preview)
-        })
-        .catch(() => {})
+      if (contextOpen)
+        void api
+          .previewContext(id)
+          .then((preview) => {
+            if (
+              activeSessionRef.current === id &&
+              epoch === sendEpoch.current &&
+              version === referenceLoadVersion.current
+            )
+              setContextPreview(preview)
+          })
+          .catch(() => {})
     } catch (cause) {
       if (activeSessionRef.current === id && epoch === sendEpoch.current)
-        setError(displayError(cause))
+        throw new Error(displayError(cause), { cause })
     } finally {
-      attachFilesLock.current = false
-      setAttachingFiles(false)
+      contextMutationLock.current = false
+      setContextSaving(false)
     }
   }
+
+  const removeReference = (path: string) =>
+    updateContextSelection(
+      (selection) => ({ ...selection, filePaths: selection.filePaths.filter((file) => file !== path) }),
+      path,
+    )
 
   const applyEventSideEffects = useCallback(
     (event: WorkspaceAgentEvent) => {
@@ -1479,7 +1514,7 @@ export function WorkspaceChat({
   }
 
   const send = async (steer = false) => {
-    if (attachFilesLock.current) return
+    if (contextMutationLock.current) return
     const epoch = ++sendEpoch.current
     const selectedSkills = [...attachedSkills]
     const draftOwner = activeSessionId
@@ -1673,15 +1708,11 @@ export function WorkspaceChat({
     })
   }
 
-  const resolvePermission = async (requestId: string, allow: boolean) => {
+  const resolvePermission = async (requestId: string, decision: ToolPermissionDecision) => {
     if (!activeSessionId) return
     try {
       setError(null)
-      await workspaceAgentApi().resolvePermission(
-        activeSessionId,
-        requestId,
-        allow ? 'allow-once' : 'deny',
-      )
+      await workspaceAgentApi().resolvePermission(activeSessionId, requestId, decision)
     } catch (cause) {
       setError(displayError(cause))
     }
@@ -1715,6 +1746,16 @@ export function WorkspaceChat({
       setError(displayError(cause))
     } finally {
       setUndoingRunId(null)
+    }
+  }
+
+  const openWordReview = async (runId: string, path: string) => {
+    const api = workspaceAgentApi()
+    if (!activeSessionId || !api.openWordReview) return
+    try {
+      await api.openWordReview(activeSessionId, runId, path)
+    } catch (cause) {
+      setError(displayError(cause))
     }
   }
 
@@ -1766,14 +1807,14 @@ export function WorkspaceChat({
         if (event.dataTransfer.types.includes('Files')) {
           event.preventDefault()
           event.stopPropagation()
-          if (!running && !attachFilesLock.current) setDragOver(true)
+          if (!running && !contextMutationLock.current) setDragOver(true)
         }
       }}
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes('Files')) {
           event.preventDefault()
           event.stopPropagation()
-          event.dataTransfer.dropEffect = running || attachingFiles ? 'none' : 'copy'
+          event.dataTransfer.dropEffect = running || contextMutationLock.current ? 'none' : 'copy'
         }
       }}
       onDragLeave={(event) => {
@@ -1836,7 +1877,7 @@ export function WorkspaceChat({
           onPointerDown={(event) => resizePanel('chat-width', event)}
         />
       )}
-      <header className="workspace-chat-header" inert={contextOpen || sessionManagerOpen}>
+      <header className="workspace-chat-header" inert={sessionManagerOpen}>
         <div className="workspace-chat-title-wrap">
           <div className="workspace-chat-title-line">
             <DogMascot
@@ -1894,7 +1935,7 @@ export function WorkspaceChat({
             <button
               type="button"
               className="workspace-chat-icon-btn ai-bigdog-memory-button"
-              onClick={() => setSessionManagerOpen(true)}
+              onClick={(event) => openMemoryManager(event.currentTarget)}
               aria-label={isChineseWorkspaceLanguage(lang) ? '记忆管理' : 'Memory'}
             >
               {isChineseWorkspaceLanguage(lang) ? '\u8bb0\u5fc6\u7ba1\u7406' : 'Memory'}
@@ -1943,28 +1984,11 @@ export function WorkspaceChat({
         </div>
       </header>
 
-      {contextOpen && activeSessionId && (
-        <ConversationContextPanel
-          api={workspaceAgentApi()}
-          sessionId={activeSessionId}
-          lang={lang}
-          onClose={() => setContextOpen(false)}
-          onChanged={(preview) => {
-            if (activeSessionRef.current === activeSessionId) {
-              ++referenceLoadVersion.current
-              setContextPreview(preview)
-              setReferenceSelection({
-                sessionId: activeSessionId,
-                paths: preview.selection.filePaths,
-              })
-            }
-          }}
-        />
-      )}
       {sessionManagerOpen && !advancedSessions && window.managedSessions && (
         <MemoryPanel
           lang={lang}
-          onClose={() => setSessionManagerOpen(false)}
+          currentSessionId={activeSessionId}
+          onClose={closeMemoryManager}
           onAdvanced={() => setAdvancedSessions(true)}
         />
       )}
@@ -2136,7 +2160,7 @@ export function WorkspaceChat({
         </div>
       ) : (
         <div
-          inert={contextOpen || sessionManagerOpen}
+          inert={sessionManagerOpen}
           className={`workspace-chat-grid ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}
         >
           <aside
@@ -2315,6 +2339,7 @@ export function WorkspaceChat({
                   .join('|')}
                 undoingRunId={undoingRunId}
                 onUndo={(runId) => void undoRun(runId)}
+                onWordReview={(runId, path) => void openWordReview(runId, path)}
                 onOpen={(path, artifactId) =>
                   artifactId && activeSessionId && window.aiOfficeTasks
                     ? void window.aiOfficeTasks
@@ -2348,7 +2373,9 @@ export function WorkspaceChat({
                   <p>{copy.welcomeDescription}</p>
                 </div>
               )}
-              {timeline.items.map((item) => {
+              {timelineForDisplay(timeline, running || !!pendingPermission).map((item) => {
+                if (item.kind === 'work')
+                  return <WorkspaceToolSteps key={item.id} group={item} lang={lang} />
                 if (item.kind === 'message') {
                   return (
                     <div className={`workspace-chat-message ${item.role}`} key={item.id}>
@@ -2407,67 +2434,51 @@ export function WorkspaceChat({
                     </details>
                   )
                 }
-                if (item.kind === 'file') {
-                  const label =
-                    item.operation === 'read'
-                      ? copy.fileRead
-                      : item.operation === 'created'
-                        ? copy.fileCreated
-                        : copy.fileUpdated
-                  return (
-                    <div className="workspace-chat-file-activity" key={item.id}>
-                      <span className="workspace-chat-file-activity-mark" aria-hidden="true">
-                        {item.operation === 'read' ? 'R' : item.operation === 'created' ? '+' : 'W'}
-                      </span>
-                      <span>{label}</span>
-                      <span className="workspace-chat-activity-summary">{item.path}</span>
-                    </div>
-                  )
-                }
-                if (item.kind === 'plan') {
-                  return (
-                    <div className="workspace-chat-plan" key={item.id}>
-                      <div className="workspace-chat-plan-title">{copy.plan}</div>
-                      <ol>
-                        {item.steps.map((step) => (
-                          <li className={step.status} key={step.id}>
-                            <span className="workspace-chat-plan-mark" aria-hidden="true" />
-                            <span>{step.title}</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  )
-                }
                 if (item.kind === 'permission') {
                   return (
                     <div className={`workspace-chat-permission ${item.state}`} key={item.id}>
                       <div className="workspace-chat-permission-copy">
                         <strong>{workspacePermissionText(item.title, lang)}</strong>
                         <span>{workspacePermissionText(item.description, lang)}</span>
+                        {item.state === 'pending' && item.round && (
+                          <small title={item.round.baseVersion}>
+                            {copy.roundApprovalScope} · {item.round.baseVersion.slice(0, 12)}
+                          </small>
+                        )}
                       </div>
                       {item.state === 'pending' ? (
                         <div className="workspace-chat-permission-actions">
                           <button
                             type="button"
-                            onClick={() => void resolvePermission(item.requestId, false)}
+                            onClick={() => void resolvePermission(item.requestId, 'deny')}
                           >
                             {copy.deny}
                           </button>
                           <button
                             type="button"
-                            className="primary"
-                            onClick={() => void resolvePermission(item.requestId, true)}
+                            className={item.round ? undefined : 'primary'}
+                            onClick={() => void resolvePermission(item.requestId, 'allow-once')}
                           >
                             {copy.allowOnce}
                           </button>
+                          {item.round && (
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={() => void resolvePermission(item.requestId, 'allow-round')}
+                            >
+                              {copy.allowRound}
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <span className="workspace-chat-permission-state">
                           {item.reason === 'expired'
                             ? copy.expired
+                            : item.reason === 'cancelled'
+                              ? copy.workStopped
                             : item.state === 'allowed'
-                              ? copy.allowedOnce
+                              ? item.round?.approved ? copy.allowedRound : copy.allowedOnce
                               : copy.denied}
                         </span>
                       )}
@@ -2481,6 +2492,8 @@ export function WorkspaceChat({
                       run={item.run}
                       lang={lang}
                       onUndo={(runId) => void undoRun(runId)}
+                      onWordReview={(runId, path) => void openWordReview(runId, path)}
+                      compact
                       onOpen={(path, artifactId) =>
                         artifactId && activeSessionId && window.aiOfficeTasks
                           ? void window.aiOfficeTasks
@@ -2493,54 +2506,6 @@ export function WorkspaceChat({
                     />
                   )
                 }
-                return (
-                  <details className={`workspace-chat-activity ${item.state}`} key={item.id}>
-                    <summary>
-                      <span className="workspace-chat-activity-mark">
-                        {item.state === 'running' ? '…' : item.state === 'failed' ? '!' : '✓'}
-                      </span>
-                      <span>{workspaceToolLabel(item.name, lang)}</span>
-                      <span className="workspace-chat-activity-summary">
-                        {workspaceToolSummary(item.summary, lang) ??
-                          (item.state === 'running' ? copy.toolRunning : '')}
-                      </span>
-                    </summary>
-                    {item.display?.kind === 'images' && item.display.items?.length ? (
-                      <div className="workspace-chat-tool-images">
-                        {item.display.items.map((entry, index) => {
-                          const url = safeDisplayUrl(entry.url)
-                          return url ? (
-                            <img
-                              src={url}
-                              alt={
-                                workspaceDisplayTitle(entry.title, lang) ??
-                                copy.toolResult(index + 1)
-                              }
-                              key={`${url}:${index}`}
-                            />
-                          ) : null
-                        })}
-                      </div>
-                    ) : null}
-                    {item.display?.kind === 'links' && item.display.items?.length ? (
-                      <div className="workspace-chat-tool-links">
-                        {item.display.items.map((entry, index) => {
-                          const url = safeDisplayUrl(entry.url)
-                          return url ? (
-                            <a href={url} target="_blank" rel="noreferrer" key={`${url}:${index}`}>
-                              {workspaceDisplayTitle(entry.title, lang) || url}
-                            </a>
-                          ) : null
-                        })}
-                      </div>
-                    ) : null}
-                    {item.display?.kind === 'text' && item.display.text ? (
-                      <pre>{workspaceToolDisplayText(item.display.text, lang)}</pre>
-                    ) : item.output ? (
-                      <pre>{workspaceToolOutput(item.output, lang)}</pre>
-                    ) : null}
-                  </details>
-                )
               })}
             </div>
             {error && (
@@ -2716,9 +2681,11 @@ export function WorkspaceChat({
                       </button>
                       <button
                         type="button"
-                        disabled={running || attachingFiles}
+                        disabled={running || attachingFiles || contextSaving}
                         aria-label={`${isChineseWorkspaceLanguage(lang) ? '移除引用' : 'Remove reference'} ${file.name}`}
-                        onClick={() => void removeReference(file.path)}
+                        onClick={() =>
+                          void removeReference(file.path).catch((cause) => setError(displayError(cause)))
+                        }
                       >
                         ×
                       </button>
@@ -2767,18 +2734,43 @@ export function WorkspaceChat({
                   </div>
                 )}
                 <div className="workspace-chat-context-summary">
-                  <button type="button" disabled={running} onClick={() => void showContext()}>
-                    {isChineseWorkspaceLanguage(lang)
-                      ? '\u6587\u4ef6\u4e0e\u8bb0\u5fc6'
-                      : 'Files & memory'}
-                  </button>{' '}
-                  {contextPreview && (contextPreview.memory.sources.length || referenceFiles.length)
-                    ? `${contextPreview.memory.sources.length} ${isChineseWorkspaceLanguage(lang) ? '\u4efd\u8bb0\u5fc6' : 'memories'} \u00b7 ${referenceFiles.length} ${isChineseWorkspaceLanguage(lang) ? '\u4e2a\u6587\u4ef6' : 'files'}`
-                    : contextPreview?.selection.workspaceMemory !== false
-                      ? isChineseWorkspaceLanguage(lang)
-                        ? '自动使用相关记忆'
-                        : 'Relevant memory is automatic'
-                      : ''}
+                  <button
+                    ref={contextTriggerRef}
+                    type="button"
+                    className="workspace-chat-context-trigger"
+                    aria-label={zh ? '文件与记忆' : 'Files & memory'}
+                    aria-expanded={contextOpen}
+                    aria-controls={contextOpen ? contextPanelId : undefined}
+                    onClick={() => void showContext()}
+                  >
+                    {zh ? '文件与记忆' : 'Files & memory'}
+                    {referenceFiles.length > 0 && (
+                      <span data-file-count="">
+                        {referenceFiles.length} {zh ? '个文件' : referenceFiles.length === 1 ? 'file' : 'files'}
+                      </span>
+                    )}
+                    <svg
+                      viewBox="0 0 16 16"
+                      width="13"
+                      height="13"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      aria-hidden="true"
+                    >
+                      <path d="m4 10 4-4 4 4" />
+                    </svg>
+                  </button>
+                  {!contextLoadingError && (!activeSessionId || selectedContext) && (
+                    <span
+                      className="workspace-chat-context-status"
+                      data-enabled={selectedContext?.workspaceMemory ?? true}
+                    >
+                      {selectedContext?.workspaceMemory === false
+                        ? zh ? '自动记忆已关' : 'Auto memory off'
+                        : zh ? '自动记忆已开' : 'Auto memory on'}
+                    </span>
+                  )}
                 </div>
                 {presentation === 'home' && (
                   <div className="ai-bigdog-model-actions">
@@ -2801,7 +2793,7 @@ export function WorkspaceChat({
                         )
                       }
                       onAddFile={() => {
-                        if (!running && !attachFilesLock.current) filePickerRef.current?.click()
+                        if (!running && !contextMutationLock.current) filePickerRef.current?.click()
                       }}
                     />
                   </div>
@@ -2820,7 +2812,6 @@ export function WorkspaceChat({
                   mode={approvalMode}
                   ready={approvalModeReady}
                   saving={approvalModeSaving}
-                  zh={isChineseWorkspaceLanguage(lang)}
                   onChange={changeApprovalMode}
                   copy={copy}
                   loadError={approvalLoadError}
@@ -2841,7 +2832,10 @@ export function WorkspaceChat({
                         className="workspace-chat-primary-btn"
                         title={copy.enterHint}
                         disabled={
-                          attachingFiles || !input.trim() || (!activeSessionId && !workspace)
+                          attachingFiles ||
+                          contextSaving ||
+                          !input.trim() ||
+                          (!activeSessionId && !workspace)
                         }
                       >
                         {running ? copy.steer : copy.send}
@@ -2851,6 +2845,32 @@ export function WorkspaceChat({
                 />
               </div>
             </form>
+            {contextOpen && activeSessionId && (
+              <div ref={contextLayerRef} className="workspace-chat-context-layer">
+                <ConversationContextPanel
+                  key={activeSessionId}
+                  id={contextPanelId}
+                  sessionId={activeSessionId}
+                  lang={lang}
+                  selection={selectedContext}
+                  preview={contextPreview}
+                  files={referenceFiles}
+                  busy={running || attachingFiles || contextSaving}
+                  error={contextLoadingError}
+                  onClose={closeContext}
+                  onManageMemory={
+                    window.managedSessions ? () => openMemoryManager(contextTriggerRef.current) : undefined
+                  }
+                  onAddFiles={() => filePickerRef.current?.click()}
+                  onOpenFile={(path) => {
+                    setContextOpen(false)
+                    void openFile(path)
+                  }}
+                  onRemoveFile={removeReference}
+                  onChange={updateContextSelection}
+                />
+              </div>
+            )}
           </section>
         </div>
       )}
